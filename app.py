@@ -49,7 +49,7 @@ if "search_input" not in st.session_state:
 if "weight_input" not in st.session_state:
     st.session_state.weight_input = None
 
-# --- ログイン＆月選択画面 ---
+# --- ログインと月選択画面 ---
 if not st.session_state.username or not st.session_state.target_month:
     st.title("🌾 収穫量記録システム")
     st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
