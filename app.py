@@ -6,6 +6,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 import unicodedata
 import streamlit.components.v1 as components
+import time  # オートフォーカスを毎回強制実行させるために追加
 
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
@@ -39,6 +40,8 @@ def load_log_data():
     data = sheet.get_all_values()
     if len(data) > 0:
         df = pd.DataFrame(data[1:], columns=data[0])
+        # ヘッダーの前後の空白文字などを自動で綺麗にする
+        df.columns = df.columns.astype(str).str.strip()
         return df
     return pd.DataFrame()
 
@@ -69,6 +72,18 @@ if not st.session_state.username or not st.session_state.target_month:
             st.rerun()
         else:
             st.warning("ユーザー名を入力してください。")
+    
+    # ログイン画面のオートフォーカス
+    components.html(
+        f"""
+        <script>
+        setTimeout(function() {{
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {{ inputs[0].focus(); }}
+        }}, 400);
+        </script>
+        """, height=0
+    )
     st.stop()
 
 # --- データ送信処理 ---
@@ -76,7 +91,6 @@ def submit_harvest(line_str=None):
     weight_str = st.session_state.weight_input
     if weight_str:
         try:
-            # 全角数字で入力されてもエラーにならないよう半角に変換
             weight_str = unicodedata.normalize('NFKC', weight_str)
             weight = float(weight_str)
             
@@ -100,7 +114,8 @@ def submit_harvest(line_str=None):
                 log_sheet.append_row(new_row)
                 
                 st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を記録しました！")
-                # 送信完了後に入力欄をリセットし、最初のライン検索画面に戻る
+                
+                # 送信完了後に入力欄をリセット
                 st.session_state.weight_input = ""
                 st.session_state.search_input = ""
         except ValueError:
@@ -109,6 +124,7 @@ def submit_harvest(line_str=None):
 def cancel_input():
     st.session_state.weight_input = ""
     st.session_state.search_input = ""
+
 
 # --- メイン画面 ---
 st.title("収穫量入力")
@@ -121,11 +137,13 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-# --- 変更点1: 袋数（入力回数）の計算と表示 ---
+# --- 袋数（入力回数）の計算と表示（修正版） ---
 sack_count = 0
-if not df_log.empty and 'Target Month' in df_log.columns:
-    df_month = df_log[df_log['Target Month'] == st.session_state.target_month]
-    sack_count = len(df_month) # 行数（＝袋数）をカウント
+if not df_log.empty and len(df_log.columns) >= 3:
+    # ヘッダー名に依存せず、確実に3列目(C列)のデータを「月」として判定する
+    target_col = df_log.columns[2]
+    df_month = df_log[df_log[target_col] == st.session_state.target_month]
+    sack_count = len(df_month)
 
 st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
 
@@ -152,7 +170,6 @@ if search_val:
         
         st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
         
-        # --- 変更点2: text_inputに変更（エンター1回で送信可能に） ---
         st.text_input(
             "重量を入力 (Enterで確定して送信)", 
             value="",
@@ -186,10 +203,11 @@ if search_val:
 
 st.divider()
 
-# --- 履歴表示 ---
+# --- 履歴表示（修正版） ---
 st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
-if not df_log.empty and 'Target Month' in df_log.columns:
-    df_filtered = df_log[df_log['Target Month'] == st.session_state.target_month]
+if not df_log.empty and len(df_log.columns) >= 3:
+    target_col = df_log.columns[2]
+    df_filtered = df_log[df_log[target_col] == st.session_state.target_month]
     
     if not df_filtered.empty:
         df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
@@ -199,18 +217,20 @@ if not df_log.empty and 'Target Month' in df_log.columns:
 else:
     st.info("まだ入力履歴がありません。")
 
-# --- 変更点3: 自動フォーカス（カーソル合わせ）用JavaScript ---
+# --- 確実なオートフォーカス実行のための仕組み ---
+# time.time() を入れることで、画面が切り替わるたびに毎回新しいスクリプトとして認識・実行させます
 components.html(
-    """
+    f"""
     <script>
-    setTimeout(function() {
+    setTimeout(function() {{
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-        if (inputs.length > 0) {
-            // 一番最後に出現した入力欄（検索 または 重量）に自動でカーソルを合わせる
+        if (inputs.length > 0) {{
+            // 画面上の一番最後にある入力欄（検索 または 重量）にカーソルを合わせる
             inputs[inputs.length - 1].focus();
-        }
-    }, 200);
+        }}
+    }}, 400);
     </script>
+    <!-- timestamp: {time.time()} -->
     """,
     height=0
 )
