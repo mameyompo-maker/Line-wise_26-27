@@ -97,8 +97,10 @@ st.caption(f"👤 担当者: {st.session_state.username}")
 
 try:
     df_master = load_master_data()
+
+# 変更後（エラーの正体 e を画面に出す）
 except Exception as e:
-    st.error("マスタデータの読み込みに失敗しました。スプレッドシートの設定を確認してください。")
+    st.error(f"エラーが発生しました: {e}")
     st.stop()
 
 # ライン番号の検索（最初の数字を入力）
