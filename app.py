@@ -10,7 +10,7 @@ import time
 
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
-# --- ユーザー提供の強力なCSS（スマホ用横並び＆ボタン色指定） ---
+# --- 修正版：スマホ用横並び＆ボタン色指定CSS ---
 st.markdown("""
     <style>
     /* 全体の横スクロールを強制的にオフ */
@@ -19,22 +19,24 @@ st.markdown("""
     }
 
     @media (max-width: 640px) {
-        /* stHorizontalBlockの中でも、子要素(カラム)がちょうど2つの場合のみGridを適用する（検索バー崩れ防止） */
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) {
+        /* 【修正点】id="button-container" という目印をつけた要素の中にあるカラムだけを2分割のGridにする */
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) > div[data-testid="stHorizontalBlock"] {
             display: grid !important;
             grid-template-columns: 1fr 1fr !important; /* 均等な2つのマス目を作成 */
             gap: 10px !important;
             width: 100% !important;
         }
         
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) > div[data-testid="column"] {
+        /* カラムをGridのマス目に強制的に従わせる */
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) > div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
             width: 100% !important;
             min-width: 0px !important;
             max-width: 100% !important;
             padding: 0 !important;
         }
         
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button {
+        /* ボタン本体の設定 */
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) button {
             width: 100% !important;
             min-width: 0px !important;
             height: auto !important;
@@ -43,26 +45,27 @@ st.markdown("""
             margin: 0 !important;
         }
         
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button p,
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button div,
-        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button span {
+        /* ボタン内部のテキストを折り返させる */
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) button p,
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) button div,
+        div[data-testid="stVerticalBlock"] > div:has(#button-container) button span {
             white-space: normal !important; 
             word-wrap: break-word !important; 
             text-align: center !important;
-            font-size: 0.8rem !important; 
+            font-size: 1.0rem !important; 
             line-height: 1.2 !important;
         }
     }
     
     /* 左側のカラム(1つ目)のボタンを緑色に（完了ボタン用） */
-    div[data-testid="column"]:nth-of-type(1) button[key="submit_btn"] {
+    div[data-testid="stVerticalBlock"] > div:has(#button-container) div[data-testid="column"]:nth-of-type(1) button {
         background-color: #28a745 !important;
         color: white !important;
         border-color: #28a745 !important;
     }
     
     /* 右側のカラム(2つ目)のボタンを赤色に（キャンセルボタン用） */
-    div[data-testid="column"]:nth-of-type(2) button[key="cancel_btn"] {
+    div[data-testid="stVerticalBlock"] > div:has(#button-container) div[data-testid="column"]:nth-of-type(2) button {
         background-color: #dc3545 !important;
         color: white !important;
         border-color: #dc3545 !important;
@@ -120,7 +123,6 @@ if not st.session_state.username or not st.session_state.target_month:
     st.title("🌾 収穫量記録システム")
     st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
     
-    # 選択肢の先頭に「月を選択」を追加
     month_options = ["月を選択", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
                      "Nov-26", "Dec-26", "Jan-27", "Feb-27", "Mar-27", "Apr-27"]
     
@@ -188,7 +190,6 @@ def cancel_input():
 
 
 # --- メイン画面 ---
-# ログアウト（画面に戻る）ボタンを左上に配置
 if st.button("⬅️ ログイン画面に戻る"):
     st.session_state.username = ""
     st.session_state.target_month = ""
@@ -206,7 +207,6 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-# 袋数（入力回数）の計算と表示
 sack_count = 0
 if not df_log.empty and len(df_log.columns) >= 3:
     target_col = df_log.columns[2]
@@ -215,7 +215,6 @@ if not df_log.empty and len(df_log.columns) >= 3:
 
 st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
 
-# ライン検索
 col_s1, col_s2 = st.columns([3, 1])
 with col_s1:
     search_val = st.text_input("ラインの最初の番号を入力 (Enterで次へ)", key="search_input", placeholder="例: 1")
@@ -247,7 +246,10 @@ if search_val:
             args=(line_name,)
         )
         
-        # --- レイアウト変更: 完了(左) と キャンセル(右) ---
+        # --- CSSを適用するための目印「button-container」を設置 ---
+        st.markdown('<div id="button-container"></div>', unsafe_allow_html=True)
+        
+        # 完了ボタン（左）、キャンセルボタン（右）の配置
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             if st.button("✅ 完了", key="submit_btn", use_container_width=True):
@@ -272,7 +274,6 @@ if search_val:
 
 st.divider()
 
-# 履歴表示
 st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
 if not df_log.empty and len(df_log.columns) >= 3:
     target_col = df_log.columns[2]
