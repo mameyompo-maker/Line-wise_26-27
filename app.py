@@ -6,9 +6,70 @@ import gspread
 from google.oauth2.service_account import Credentials
 import unicodedata
 import streamlit.components.v1 as components
-import time  # オートフォーカスを毎回強制実行させるために追加
+import time
 
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
+
+# --- ユーザー提供の強力なCSS（スマホ用横並び＆ボタン色指定） ---
+st.markdown("""
+    <style>
+    /* 全体の横スクロールを強制的にオフ */
+    .stApp {
+        overflow-x: hidden !important;
+    }
+
+    @media (max-width: 640px) {
+        /* stHorizontalBlockの中でも、子要素(カラム)がちょうど2つの場合のみGridを適用する（検索バー崩れ防止） */
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) {
+            display: grid !important;
+            grid-template-columns: 1fr 1fr !important; /* 均等な2つのマス目を作成 */
+            gap: 10px !important;
+            width: 100% !important;
+        }
+        
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) > div[data-testid="column"] {
+            width: 100% !important;
+            min-width: 0px !important;
+            max-width: 100% !important;
+            padding: 0 !important;
+        }
+        
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button {
+            width: 100% !important;
+            min-width: 0px !important;
+            height: auto !important;
+            min-height: 65px !important; 
+            padding: 4px !important;
+            margin: 0 !important;
+        }
+        
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button p,
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button div,
+        div[data-testid="stHorizontalBlock"]:has(> div[data-testid="column"]:nth-child(2):last-child) button span {
+            white-space: normal !important; 
+            word-wrap: break-word !important; 
+            text-align: center !important;
+            font-size: 0.8rem !important; 
+            line-height: 1.2 !important;
+        }
+    }
+    
+    /* 左側のカラム(1つ目)のボタンを緑色に（完了ボタン用） */
+    div[data-testid="column"]:nth-of-type(1) button[key="submit_btn"] {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+    }
+    
+    /* 右側のカラム(2つ目)のボタンを赤色に（キャンセルボタン用） */
+    div[data-testid="column"]:nth-of-type(2) button[key="cancel_btn"] {
+        background-color: #dc3545 !important;
+        color: white !important;
+        border-color: #dc3545 !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 
 @st.cache_resource
 def get_gspread_client():
@@ -40,7 +101,6 @@ def load_log_data():
     data = sheet.get_all_values()
     if len(data) > 0:
         df = pd.DataFrame(data[1:], columns=data[0])
-        # ヘッダーの前後の空白文字などを自動で綺麗にする
         df.columns = df.columns.astype(str).str.strip()
         return df
     return pd.DataFrame()
@@ -54,26 +114,27 @@ if "search_input" not in st.session_state:
 if "weight_input" not in st.session_state:
     st.session_state.weight_input = ""
 
+
 # --- ログイン＆月選択画面 ---
 if not st.session_state.username or not st.session_state.target_month:
     st.title("🌾 収穫量記録システム")
     st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
     
-    month_options = ["May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
+    # 選択肢の先頭に「月を選択」を追加
+    month_options = ["月を選択", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
                      "Nov-26", "Dec-26", "Jan-27", "Feb-27", "Mar-27", "Apr-27"]
     
-    user_input = st.text_input("ユーザー名", placeholder="例: Ze Maria")
-    month_input = st.selectbox("記録する対象月", month_options, index=2)
+    user_input = st.text_input("ユーザー名", placeholder="名前を入力")
+    month_input = st.selectbox("記録する対象月", month_options, index=0)
     
     if st.button("ログインして開始"):
-        if user_input:
+        if user_input and month_input != "月を選択":
             st.session_state.username = user_input
             st.session_state.target_month = month_input
             st.rerun()
         else:
-            st.warning("ユーザー名を入力してください。")
-    
-    # ログイン画面のオートフォーカス
+            st.warning("⚠️ ユーザー名を入力し、対象月を正しく選択してください。")
+            
     components.html(
         f"""
         <script>
@@ -86,7 +147,8 @@ if not st.session_state.username or not st.session_state.target_month:
     )
     st.stop()
 
-# --- データ送信処理 ---
+
+# --- データ送信・キャンセル処理 ---
 def submit_harvest(line_str=None):
     weight_str = st.session_state.weight_input
     if weight_str:
@@ -115,7 +177,6 @@ def submit_harvest(line_str=None):
                 
                 st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を記録しました！")
                 
-                # 送信完了後に入力欄をリセット
                 st.session_state.weight_input = ""
                 st.session_state.search_input = ""
         except ValueError:
@@ -127,6 +188,14 @@ def cancel_input():
 
 
 # --- メイン画面 ---
+# ログアウト（画面に戻る）ボタンを左上に配置
+if st.button("⬅️ ログイン画面に戻る"):
+    st.session_state.username = ""
+    st.session_state.target_month = ""
+    st.session_state.search_input = ""
+    st.session_state.weight_input = ""
+    st.rerun()
+
 st.title("収穫量入力")
 st.caption(f"👤 担当者: {st.session_state.username} | 📅 対象月: {st.session_state.target_month}")
 
@@ -137,17 +206,16 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-# --- 袋数（入力回数）の計算と表示（修正版） ---
+# 袋数（入力回数）の計算と表示
 sack_count = 0
 if not df_log.empty and len(df_log.columns) >= 3:
-    # ヘッダー名に依存せず、確実に3列目(C列)のデータを「月」として判定する
     target_col = df_log.columns[2]
     df_month = df_log[df_log[target_col] == st.session_state.target_month]
     sack_count = len(df_month)
 
 st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
 
-# --- ライン検索 ---
+# ライン検索
 col_s1, col_s2 = st.columns([3, 1])
 with col_s1:
     search_val = st.text_input("ラインの最初の番号を入力 (Enterで次へ)", key="search_input", placeholder="例: 1")
@@ -179,6 +247,7 @@ if search_val:
             args=(line_name,)
         )
         
+        # --- レイアウト変更: 完了(左) と キャンセル(右) ---
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             if st.button("✅ 完了", key="submit_btn", use_container_width=True):
@@ -186,7 +255,7 @@ if search_val:
                     submit_harvest(line_name)
                     st.rerun()
         with btn_col2:
-            if st.button("🚫 キャンセル", on_click=cancel_input, use_container_width=True):
+            if st.button("🚫 キャンセル", key="cancel_btn", on_click=cancel_input, use_container_width=True):
                 pass
         
         st.divider()
@@ -203,7 +272,7 @@ if search_val:
 
 st.divider()
 
-# --- 履歴表示（修正版） ---
+# 履歴表示
 st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
 if not df_log.empty and len(df_log.columns) >= 3:
     target_col = df_log.columns[2]
@@ -217,15 +286,12 @@ if not df_log.empty and len(df_log.columns) >= 3:
 else:
     st.info("まだ入力履歴がありません。")
 
-# --- 確実なオートフォーカス実行のための仕組み ---
-# time.time() を入れることで、画面が切り替わるたびに毎回新しいスクリプトとして認識・実行させます
 components.html(
     f"""
     <script>
     setTimeout(function() {{
         const inputs = window.parent.document.querySelectorAll('input[type="text"]');
         if (inputs.length > 0) {{
-            // 画面上の一番最後にある入力欄（検索 または 重量）にカーソルを合わせる
             inputs[inputs.length - 1].focus();
         }}
     }}, 400);
