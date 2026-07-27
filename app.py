@@ -4,6 +4,8 @@ from datetime import datetime
 import re
 import gspread
 from google.oauth2.service_account import Credentials
+import unicodedata
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
@@ -47,7 +49,7 @@ if "target_month" not in st.session_state:
 if "search_input" not in st.session_state:
     st.session_state.search_input = ""
 if "weight_input" not in st.session_state:
-    st.session_state.weight_input = None
+    st.session_state.weight_input = ""
 
 # --- ログイン＆月選択画面 ---
 if not st.session_state.username or not st.session_state.target_month:
@@ -71,35 +73,42 @@ if not st.session_state.username or not st.session_state.target_month:
 
 # --- データ送信処理 ---
 def submit_harvest(line_str=None):
-    weight = st.session_state.weight_input
-    if weight is not None and weight > 0:
-        unit = st.session_state.unit_input
-        weight_g = int(weight * 1000) if unit == "kg" else int(weight)
-        
-        client = get_gspread_client()
-        log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
-        
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        new_row = [
-            timestamp, 
-            st.session_state.username, 
-            st.session_state.target_month, 
-            line_str, 
-            f"{weight:.2f}",
-            unit, 
-            weight_g
-        ]
-        log_sheet.append_row(new_row)
-        
-        st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を記録しました！")
-        # 💡 ここで入力値をリセットすることで、自動的に「ライン検索画面」に戻る仕組みになっています
-        st.session_state.weight_input = None
-        st.session_state.search_input = ""
+    weight_str = st.session_state.weight_input
+    if weight_str:
+        try:
+            # 全角数字で入力されてもエラーにならないよう半角に変換
+            weight_str = unicodedata.normalize('NFKC', weight_str)
+            weight = float(weight_str)
+            
+            if weight > 0:
+                unit = st.session_state.unit_input
+                weight_g = int(weight * 1000) if unit == "kg" else int(weight)
+                
+                client = get_gspread_client()
+                log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+                
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                new_row = [
+                    timestamp, 
+                    st.session_state.username, 
+                    st.session_state.target_month, 
+                    line_str, 
+                    f"{weight:.2f}",
+                    unit, 
+                    weight_g
+                ]
+                log_sheet.append_row(new_row)
+                
+                st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を記録しました！")
+                # 送信完了後に入力欄をリセットし、最初のライン検索画面に戻る
+                st.session_state.weight_input = ""
+                st.session_state.search_input = ""
+        except ValueError:
+            st.error("⚠️ 数値を正しく入力してください。")
 
 def cancel_input():
-    st.session_state.weight_input = None
+    st.session_state.weight_input = ""
     st.session_state.search_input = ""
-
 
 # --- メイン画面 ---
 st.title("収穫量入力")
@@ -112,28 +121,22 @@ except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-# --- 月間合計の計算と表示 ---
-total_kg = 0.0
-if not df_log.empty and 'Target Month' in df_log.columns and 'Weight in Grams' in df_log.columns:
+# --- 変更点1: 袋数（入力回数）の計算と表示 ---
+sack_count = 0
+if not df_log.empty and 'Target Month' in df_log.columns:
     df_month = df_log[df_log['Target Month'] == st.session_state.target_month]
-    if not df_month.empty:
-        # スプレッドシート上の文字列データを数値に変換して合計する
-        total_g = pd.to_numeric(df_month['Weight in Grams'], errors='coerce').sum()
-        total_kg = total_g / 1000
+    sack_count = len(df_month) # 行数（＝袋数）をカウント
 
-st.info(f"📊 **{st.session_state.target_month} の合計収穫量: {total_kg:,.2f} kg**")
+st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
 
-
-# --- ライン検索（完了ボタン付き横並びレイアウト） ---
+# --- ライン検索 ---
 col_s1, col_s2 = st.columns([3, 1])
 with col_s1:
-    search_val = st.text_input("ラインの最初の番号を入力", key="search_input", placeholder="例: 1")
+    search_val = st.text_input("ラインの最初の番号を入力 (Enterで次へ)", key="search_input", placeholder="例: 1")
 with col_s2:
-    # 検索ボタンの位置をテキスト入力欄と合わせるための空白設定
     st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
     st.button("🔍 完了", key="search_btn", use_container_width=True)
 
-# 検索値が入った瞬間に「重量入力」画面が自動で開く
 if search_val:
     matched_row = None
     for index, row in df_master.iterrows():
@@ -149,13 +152,11 @@ if search_val:
         
         st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
         
-        st.number_input(
-            "重量を入力 (Enterで確定)", 
-            min_value=0.0, 
-            step=0.1, 
-            format="%.2f",
-            value=None,
-            placeholder="例: 1.00",
+        # --- 変更点2: text_inputに変更（エンター1回で送信可能に） ---
+        st.text_input(
+            "重量を入力 (Enterで確定して送信)", 
+            value="",
+            placeholder="例: 1.5",
             key="weight_input",
             on_change=submit_harvest,
             args=(line_name,)
@@ -164,7 +165,7 @@ if search_val:
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
             if st.button("✅ 完了", key="submit_btn", use_container_width=True):
-                if st.session_state.weight_input is not None:
+                if st.session_state.weight_input:
                     submit_harvest(line_name)
                     st.rerun()
         with btn_col2:
@@ -197,3 +198,19 @@ if not df_log.empty and 'Target Month' in df_log.columns:
          st.info(f"{st.session_state.target_month} の履歴はまだありません。")
 else:
     st.info("まだ入力履歴がありません。")
+
+# --- 変更点3: 自動フォーカス（カーソル合わせ）用JavaScript ---
+components.html(
+    """
+    <script>
+    setTimeout(function() {
+        const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+        if (inputs.length > 0) {
+            // 一番最後に出現した入力欄（検索 または 重量）に自動でカーソルを合わせる
+            inputs[inputs.length - 1].focus();
+        }
+    }, 200);
+    </script>
+    """,
+    height=0
+)
