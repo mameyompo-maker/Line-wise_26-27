@@ -24,8 +24,7 @@ def get_gspread_client():
     return gspread.authorize(credentials)
 
 # スプレッドシートのキー（URLの /d/〇〇〇/ の部分）を指定してください
-SPREADSHEET_KEY = "https://docs.google.com/spreadsheets/d/1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk/edit?gid=0#gid=0"
-
+SPREADSHEET_KEY = "/d/1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk/edit?gid=0#gid=0"
 @st.cache_data(ttl=600) # 10分ごとにマスタデータをキャッシュ更新
 def load_master_data():
     client = get_gspread_client()
