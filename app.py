@@ -5,69 +5,82 @@ import re
 import gspread
 from google.oauth2.service_account import Credentials
 
-# --- アプリの初期設定（スマホ向けに最適化） ---
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
-# --- Googleスプレッドシートへの接続設定 ---
-# ※Streamlit Cloudの st.secrets から認証情報を取得する想定です
+# --- 1. TOML形式での認証情報読み込みに戻す ---
 @st.cache_resource
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # secrets.tomlに記述したGCPサービスアカウント情報を読み込む
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
         scopes=scopes
     )
     return gspread.authorize(credentials)
 
-# スプレッドシートのキー（URLの /d/〇〇〇/ の部分）を指定してください
 SPREADSHEET_KEY = "1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk"
 
-@st.cache_data(ttl=600) # 10分ごとにマスタデータをキャッシュ更新
+@st.cache_data(ttl=600)
 def load_master_data():
     client = get_gspread_client()
     sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Master")
-    data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    data = sheet.get_all_values()
+    if len(data) > 0:
+        df = pd.DataFrame(data[1:], columns=data[0])
+        return df
+    return pd.DataFrame()
 
 def load_log_data():
     client = get_gspread_client()
     sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
-    data = sheet.get_all_records()
-    return pd.DataFrame(data)
+    data = sheet.get_all_values()
+    if len(data) > 0:
+        df = pd.DataFrame(data[1:], columns=data[0])
+        return df
+    return pd.DataFrame()
 
-# --- セッションステート（状態保持）の初期化 ---
+# セッションステートの初期化
 if "username" not in st.session_state:
     st.session_state.username = ""
+if "target_month" not in st.session_state:
+    st.session_state.target_month = ""
 if "search_input" not in st.session_state:
     st.session_state.search_input = ""
+# プレースホルダーを機能させるため、初期値をNoneに設定
 if "weight_input" not in st.session_state:
-    st.session_state.weight_input = 0.0
+    st.session_state.weight_input = None
 
-# --- 1. ログイン画面 ---
-if not st.session_state.username:
+# --- ログイン＆月選択画面 ---
+if not st.session_state.username or not st.session_state.target_month:
     st.title("🌾 収穫量記録システム")
-    st.write("作業を開始するにはユーザー名を入力してください。")
+    st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
+    
+    month_options = ["May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
+                     "Nov-26", "Dec-26", "Jan-27", "Feb-27", "Mar-27", "Apr-27"]
     
     user_input = st.text_input("ユーザー名", placeholder="例: Yamada")
-    if st.button("ログイン") or user_input:
+    month_input = st.selectbox("記録する対象月", month_options, index=2)
+    
+    if st.button("ログインして開始"):
         if user_input:
             st.session_state.username = user_input
+            st.session_state.target_month = month_input
             st.rerun()
-    st.stop() # ログインするまで以降のコードは実行しない
+        else:
+            st.warning("ユーザー名を入力してください。")
+    st.stop()
 
-# --- データ送信処理（エンターキーで発火） ---
-def submit_harvest(line_str):
+# --- 4. データ送信処理（小数点2桁・整数変換） ---
+def submit_harvest(line_str=None):
     weight = st.session_state.weight_input
-    if weight > 0:
+    if weight is not None and weight > 0:
         unit = st.session_state.unit_input
-        # kgの場合はgに変換
-        weight_g = weight * 1000 if unit == "kg" else weight
         
-        # スプレッドシートへ書き込み
+        # kgの場合は1000倍して整数(int)にする（1.00kg -> 1000）
+        weight_g = int(weight * 1000) if unit == "kg" else int(weight)
+        
         client = get_gspread_client()
         log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
         
@@ -75,38 +88,36 @@ def submit_harvest(line_str):
         new_row = [
             timestamp, 
             st.session_state.username, 
+            st.session_state.target_month, 
             line_str, 
-            weight, 
+            f"{weight:.2f}", # スプレッドシートには「1.00」の形で記録
             unit, 
             weight_g
         ]
         log_sheet.append_row(new_row)
         
-        # 送信完了メッセージと入力のリセット
-        st.toast(f"✅ {line_str} のデータ（{weight}{unit}）を記録しました！")
-        st.session_state.weight_input = 0.0
-        st.session_state.search_input = "" # 次の入力に備えて検索欄もクリア
+        st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を {st.session_state.target_month}分 として記録しました！")
+        # 次の入力のためにリセット
+        st.session_state.weight_input = None
+        st.session_state.search_input = ""
 
 def cancel_input():
-    st.session_state.weight_input = 0.0
+    st.session_state.weight_input = None
     st.session_state.search_input = ""
 
-# --- 2. メイン画面（検索と入力） ---
+# --- メイン画面 ---
 st.title("収穫量入力")
-st.caption(f"👤 担当者: {st.session_state.username}")
+st.caption(f"👤 担当者: {st.session_state.username} | 📅 対象月: {st.session_state.target_month}")
 
 try:
     df_master = load_master_data()
-# 変更後（エラーの正体 e を画面に出す）
 except Exception as e:
-    st.error(f"エラーが発生しました: {e}")
+    st.error(f"マスタ読み込みエラー: {e}")
     st.stop()
 
-# ライン番号の検索（最初の数字を入力）
 search_val = st.text_input("ラインの最初の番号を入力", key="search_input", placeholder="例: 1 (L1 to L9の場合)")
 
 if search_val:
-    # Lの後の数字が検索値と一致するか判定するロジック
     matched_row = None
     for index, row in df_master.iterrows():
         line_str = str(row.get("Line Number", ""))
@@ -116,10 +127,9 @@ if search_val:
             break
     
     if matched_row is not None:
-        line_name = matched_row["Line Number"]
+        line_name = matched_row.get("Line Number", "")
         st.success(f"📌 対象ライン: **{line_name}**")
         
-        # 確認情報の表示
         cols = st.columns(4)
         cols[0].metric("Mother ID", matched_row.get("Mother Id", "-"))
         cols[1].metric("Variety", matched_row.get("Variety", "-"))
@@ -128,67 +138,52 @@ if search_val:
         
         st.divider()
         
-        # 入力フォーム（単位と重量）
         st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
         
-        # on_changeでエンターキー押下時にsubmit_harvest関数を呼び出す
+        # --- 3. プレースホルダーと自動小数点表示の設定 ---
         st.number_input(
             "重量を入力 (Enterで確定)", 
             min_value=0.0, 
             step=0.1, 
             format="%.2f",
+            value=None,  # これをNoneにすることで、最初から数字が入っていない状態になります
+            placeholder="例: 1.00", # 消す必要のない薄い文字
             key="weight_input",
             on_change=submit_harvest,
-            args=(line_name,) # コールバック関数にライン名を渡す
+            args=(line_name,)
         )
         
-        # キャンセルボタン
-        if st.button("🚫 キャンセル（クリア）", on_click=cancel_input):
-            pass
-
+        # --- 2. 完了ボタンとキャンセルボタンを横並びで配置 ---
+        btn_col1, btn_col2 = st.columns(2)
+        with btn_col1:
+            # 完了ボタン（押されたらsubmit_harvestを実行）
+            if st.button("✅ 完了", use_container_width=True):
+                # 重量に値が入っている場合のみ送信処理を行う
+                if st.session_state.weight_input is not None:
+                    submit_harvest(line_name)
+                    st.rerun() # 画面をリフレッシュ
+        with btn_col2:
+            # キャンセルボタン
+            if st.button("🚫 キャンセル", on_click=cancel_input, use_container_width=True):
+                pass
     else:
         st.warning("該当するライン番号が見つかりません。")
 
 st.divider()
 
-# --- 3. 履歴の表示と訂正機能 ---
-st.subheader("📝 本日の入力履歴と訂正")
+# --- 履歴表示 ---
+st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
 try:
     df_log = load_log_data()
-    if not df_log.empty:
-        # 今日の日付のデータのみ、またはユーザー自身のデータのみに絞ることも可能
-        # 今回はシンプルに最新10件を降順で表示
-        df_log_recent = df_log.tail(10)[::-1].reset_index(drop=True)
+    if not df_log.empty and 'Target Month' in df_log.columns:
+        df_filtered = df_log[df_log['Target Month'] == st.session_state.target_month]
         
-        st.write("※表のセルを直接タップ（クリック）して数値を修正できます。")
-        # 編集可能なデータフレームを表示
-        edited_df = st.data_editor(
-            df_log_recent,
-            use_container_width=True,
-            num_rows="dynamic",
-            key="data_editor"
-        )
-        
-        # 訂正を保存するボタン
-        if st.button("🔄 訂正をスプレッドシートに反映"):
-            client = get_gspread_client()
-            sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
-            
-            # Gspreadで全データを上書き更新（※実運用ではID等をキーにした行ごとの更新が安全です）
-            # ここでは簡易的に、元のdf_logをedited_dfの内容で上書きして全更新します
-            df_log.update(edited_df)
-            
-            # g（グラム）列の再計算（訂正漏れを防ぐため）
-            df_log['Weight in Grams'] = df_log.apply(
-                lambda x: float(x['Input Weight']) * 1000 if x['Unit'] == 'kg' else float(x['Input Weight']), axis=1
-            )
-            
-            sheet.clear()
-            sheet.update([df_log.columns.values.tolist()] + df_log.values.tolist())
-            st.success("変更を保存しました！")
-            st.rerun()
-            
+        if not df_filtered.empty:
+            df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
+            st.dataframe(df_display, use_container_width=True)
+        else:
+             st.info(f"{st.session_state.target_month} の履歴はまだありません。")
     else:
         st.info("まだ入力履歴がありません。")
 except Exception as e:
-    st.error("履歴データの取得に失敗しました。")
+    st.error(f"履歴取得エラー: {e}")
