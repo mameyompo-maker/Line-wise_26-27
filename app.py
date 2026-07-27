@@ -9,7 +9,7 @@ from google.oauth2.service_account import Credentials
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
 # --- Googleスプレッドシートへの接続設定 ---
-# ※Streamlit Cloudの st.secrets から認証情報を取得する想定です
+# ※Streamlit Cloudの st.secrets 部分から認証情報を取得する想定です
 @st.cache_resource
 def get_gspread_client():
     scopes = [
