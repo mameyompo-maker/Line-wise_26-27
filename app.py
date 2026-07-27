@@ -10,7 +10,7 @@ import time
 
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
-# --- CSS設定（提供いただいたコードをそのまま適用） ---
+# --- CSS設定 ---
 st.markdown("""
     <style>
     /* 全体の横スクロールを強制的にオフ */
@@ -22,7 +22,7 @@ st.markdown("""
         /* 1. Flexboxをやめ、厳格に2分割するGridレイアウトを採用 */
         div[data-testid="stHorizontalBlock"] {
             display: grid !important;
-            grid-template-columns: 1fr 1fr !important; /* 均等な2つのマス目を作成 */
+            grid-template-columns: 1fr 1fr !important;
             gap: 10px !important;
             width: 100% !important;
         }
@@ -40,19 +40,19 @@ st.markdown("""
             width: 100% !important;
             min-width: 0px !important;
             height: auto !important;
-            min-height: 65px !important; /* テキストが2行になってもいいように高さを確保 */
+            min-height: 65px !important;
             padding: 4px !important;
             margin: 0 !important;
         }
         
-        /* 4. 【最重要】ボタン内部のテキスト（つっかえ棒）を強制的に折り返させる */
+        /* 4. ボタン内部のテキストを強制的に折り返させる */
         div[data-testid="stHorizontalBlock"] button p,
         div[data-testid="stHorizontalBlock"] button div,
         div[data-testid="stHorizontalBlock"] button span {
             white-space: normal !important; 
             word-wrap: break-word !important; 
             text-align: center !important;
-            font-size: 0.8rem !important; /* スマホ向けに文字サイズを微調整 */
+            font-size: 0.8rem !important;
             line-height: 1.2 !important;
         }
     }
@@ -113,15 +113,55 @@ if "username" not in st.session_state:
     st.session_state.username = ""
 if "target_month" not in st.session_state:
     st.session_state.target_month = ""
-# 過去アプリの step 方式を採用
 if "step" not in st.session_state:
-    st.session_state.step = 0 # 0:ログイン, 1:検索, 2:重量入力
+    st.session_state.step = 0
 if "form_counter" not in st.session_state:
     st.session_state.form_counter = 0
 if "selected_line" not in st.session_state:
     st.session_state.selected_line = None
 if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
+if "weight_input_val" not in st.session_state:
+    st.session_state.weight_input_val = ""
+
+
+# ==========================================
+# 共通送信関数（Enterでもボタンでも呼ばれる）
+# ==========================================
+def process_submission():
+    weight_val = st.session_state.get("weight_input_val", "")
+    if weight_val:
+        try:
+            weight_str = unicodedata.normalize('NFKC', weight_val)
+            weight = float(weight_str)
+            
+            if weight > 0:
+                unit = st.session_state.get("unit_input", "kg")
+                weight_g = int(weight * 1000) if unit == "kg" else int(weight)
+                
+                client = get_gspread_client()
+                log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+                
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                new_row = [
+                    timestamp, 
+                    st.session_state.username, 
+                    st.session_state.target_month, 
+                    st.session_state.selected_line, 
+                    f"{weight:.2f}",
+                    unit, 
+                    weight_g
+                ]
+                log_sheet.append_row(new_row)
+                
+                st.toast(f"✅ {st.session_state.selected_line} のデータを記録しました！")
+                
+                # 送信成功したらStep1(検索画面)に戻り、カウンターを進めて入力欄をリフレッシュする
+                st.session_state.weight_input_val = ""
+                st.session_state.form_counter += 1
+                st.session_state.step = 1
+        except ValueError:
+            st.error("⚠️ 数値を正しく入力してください。")
 
 
 # ==========================================
@@ -137,12 +177,11 @@ if st.session_state.step == 0:
     user_input = st.text_input("ユーザー名", placeholder="名前を入力")
     month_input = st.selectbox("記録する対象月", month_options, index=0)
     
-    # ログインボタンだけは色を変えないように、col1/col2の外に配置
     if st.button("ログインして開始", use_container_width=True):
         if user_input and month_input != "月を選択":
             st.session_state.username = user_input
             st.session_state.target_month = month_input
-            st.session_state.step = 1 # 検索画面へ進む
+            st.session_state.step = 1
             st.rerun()
         else:
             st.warning("⚠️ ユーザー名を入力し、対象月を正しく選択してください。")
@@ -160,7 +199,7 @@ if st.session_state.step == 0:
     st.stop()
 
 
-# --- メイン画面共通ヘッダー ---
+# --- メイン画面共通 ---
 st.title("収穫量入力")
 st.caption(f"👤 担当者: {st.session_state.username} | 📅 対象月: {st.session_state.target_month}")
 
@@ -170,7 +209,6 @@ try:
 except Exception as e:
     st.error(f"データ読み込みエラー: {e}")
     st.stop()
-
 
 # 袋数の表示
 sack_count = 0
@@ -186,38 +224,39 @@ st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_co
 # ==========================================
 if st.session_state.step == 1:
     
-    # 戻るボタン
     if st.button("⬅️ ログイン画面に戻る"):
         st.session_state.username = ""
         st.session_state.target_month = ""
         st.session_state.step = 0
         st.rerun()
 
-    # 検索窓（単独配置）
-    search_val = st.text_input(
+    # 検索の処理関数（Enter押下時に自動で実行される）
+    def process_search():
+        search_val = st.session_state[f"search_{st.session_state.form_counter}"]
+        if search_val:
+            matched_row = None
+            for index, row in df_master.iterrows():
+                line_str = str(row.get("Line Number", ""))
+                match = re.search(r'L(\d+)', line_str)
+                if match and match.group(1) == search_val:
+                    matched_row = row
+                    break
+            
+            if matched_row is not None:
+                st.session_state.selected_line = matched_row.get("Line Number", "")
+                st.session_state.matched_row = matched_row
+                st.session_state.step = 2
+            else:
+                st.warning("該当するライン番号が見つかりません。")
+
+    # Enterキーで自動検索されるように on_change を設定
+    st.text_input(
         "ラインの最初の番号を入力 (Enterで次へ)", 
         placeholder="例: 1",
-        key=f"search_{st.session_state.form_counter}"
+        key=f"search_{st.session_state.form_counter}",
+        on_change=process_search
     )
     
-    # 検索実行
-    if search_val:
-        matched_row = None
-        for index, row in df_master.iterrows():
-            line_str = str(row.get("Line Number", ""))
-            match = re.search(r'L(\d+)', line_str)
-            if match and match.group(1) == search_val:
-                matched_row = row
-                break
-        
-        if matched_row is not None:
-            st.session_state.selected_line = matched_row.get("Line Number", "")
-            st.session_state.matched_row = matched_row
-            st.session_state.step = 2 # 重量入力画面へ進む
-            st.rerun()
-        else:
-            st.warning("該当するライン番号が見つかりません。")
-
     components.html(
         f"""
         <script>
@@ -241,55 +280,30 @@ elif st.session_state.step == 2:
     
     st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
     
-    weight_input_val = st.text_input(
-        "重量を入力", 
+    # 【重要】on_change に process_submission を設定したことで、
+    # ユーザーが数字を打って「Enter」を押した瞬間に、裏側で確実に送信＆Step1への移行が行われます
+    st.text_input(
+        "重量を入力 (Enterで確定して送信)", 
         value="",
         placeholder="例: 1.5",
-        key=f"weight_{st.session_state.form_counter}"
+        key="weight_input_val",
+        on_change=process_submission
     )
 
-    # --- 提供されたコード通りの col1, col2 の配置 ---
     col1, col2 = st.columns(2)
     
     with col1:
+        # ボタンクリックでも process_submission を走らせる
         if st.button("✅ 完了", use_container_width=True):
-            if weight_input_val:
-                try:
-                    weight_str = unicodedata.normalize('NFKC', weight_input_val)
-                    weight = float(weight_str)
-                    
-                    if weight > 0:
-                        unit = st.session_state.unit_input
-                        weight_g = int(weight * 1000) if unit == "kg" else int(weight)
-                        
-                        client = get_gspread_client()
-                        log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
-                        
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        new_row = [
-                            timestamp, 
-                            st.session_state.username, 
-                            st.session_state.target_month, 
-                            line_name, 
-                            f"{weight:.2f}",
-                            unit, 
-                            weight_g
-                        ]
-                        log_sheet.append_row(new_row)
-                        
-                        st.toast(f"✅ {line_name} のデータを記録しました！")
-                        st.session_state.form_counter += 1
-                        st.session_state.step = 1 # 検索画面に戻る
-                        st.rerun()
-                except ValueError:
-                    st.error("⚠️ 数値を正しく入力してください。")
-            else:
-                st.warning("⚠️ 重量を入力してください。")
+            process_submission()
+            if st.session_state.step == 1: # 送信成功してStep1に切り替わっていればリロード
+                st.rerun()
                 
     with col2:
         if st.button("🚫 キャンセル", use_container_width=True):
+            st.session_state.weight_input_val = ""
             st.session_state.form_counter += 1
-            st.session_state.step = 1 # 検索画面に戻る
+            st.session_state.step = 1
             st.rerun()
 
     st.divider()
@@ -308,19 +322,6 @@ elif st.session_state.step == 2:
         setTimeout(function() {{
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
             if (inputs.length > 0) {{ inputs[inputs.length - 1].focus(); }}
-            
-            // Enterキーで完了ボタンを押したことにする処理
-            const weightInput = inputs[inputs.length - 1];
-            weightInput.addEventListener("keypress", function(event) {{
-                if (event.key === "Enter") {{
-                    event.preventDefault();
-                    // col1の中にあるボタンを探してクリック
-                    const buttons = window.parent.document.querySelectorAll('div[data-testid="column"]:nth-of-type(1) button');
-                    if(buttons.length > 0) {{
-                        buttons[0].click();
-                    }}
-                }}
-            }});
         }}, 400);
         </script>
         <!-- timestamp: {time.time()} -->
