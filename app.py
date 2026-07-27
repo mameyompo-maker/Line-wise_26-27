@@ -4,21 +4,23 @@ from datetime import datetime
 import re
 import gspread
 from google.oauth2.service_account import Credentials
+import json
 
 # --- アプリの初期設定（スマホ向けに最適化） ---
 st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
 
 # --- Googleスプレッドシートへの接続設定 ---
-# ※Streamlit Cloudの st.secrets 部分から認証情報を取得する想定です
 @st.cache_resource
 def get_gspread_client():
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive"
     ]
-    # secrets.tomlに記述したGCPサービスアカウント情報を読み込む
+    # Secretsから文字列として取得し、json.loadsで辞書型（データ）に自動変換する
+    creds_json = json.loads(st.secrets["gcp_service_account"])
+    
     credentials = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
+        creds_json,
         scopes=scopes
     )
     return gspread.authorize(credentials)
