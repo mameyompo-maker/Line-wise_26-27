@@ -7,10 +7,116 @@ from google.oauth2.service_account import Credentials
 import unicodedata
 import streamlit.components.v1 as components
 import time
+import json
+import base64
+import os
 
-st.set_page_config(page_title="収穫量記録アプリ", layout="centered", initial_sidebar_state="collapsed")
+# ==========================================
+# 1. ページ全体の基本設定
+# ==========================================
+# page_icon="icon.png" とすることで、PC等のブラウザのタブに画像が表示されます
+st.set_page_config(
+    page_title="収穫量記録アプリ", 
+    page_icon="icon.png", 
+    layout="centered", 
+    initial_sidebar_state="collapsed"
+)
 
-# --- CSS設定 ---
+# ==========================================
+# 2. PWA（スマホアプリ化）のための設定注入
+# ==========================================
+# ローカル画像をスマホのホーム画面アイコンとして認識させるため、画像データを文字列に変換します
+def get_base64_image(image_path):
+    if os.path.exists(image_path):
+        with open(image_path, "rb") as img_file:
+            encoded_string = base64.b64encode(img_file.read()).decode()
+            return f"data:image/png;base64,{encoded_string}"
+    return ""
+
+# GitHubの同じ階層に置いた "icon.png" を読み込む
+ICON_DATA_URI = get_base64_image("icon.png")
+
+APP_NAME = "収穫量記録"
+THEME_COLOR = "#28a745" # 時計部分の緑色
+
+# 画像が正しく読み込めた場合のみ、スマホ用設定を注入
+if ICON_DATA_URI:
+    pwa_manifest = {
+        "name": "収穫量記録システム",
+        "short_name": APP_NAME,
+        "start_url": ".",
+        "display": "standalone",
+        "theme_color": THEME_COLOR,
+        "background_color": "#ffffff",
+        "icons": [
+            {"src": ICON_DATA_URI, "sizes": "192x192", "type": "image/png"},
+            {"src": ICON_DATA_URI, "sizes": "512x512", "type": "image/png"}
+        ]
+    }
+
+    components.html(
+        f"""
+        <script>
+        const head = window.parent.document.getElementsByTagName('head')[0];
+        
+        // 重複してタグを追加しないためのチェック
+        if (!window.parent.document.getElementById('pwa-injected')) {{
+            
+            // 1. Android/iOS向け テーマカラー（時計部分の色）
+            let metaTheme = window.parent.document.createElement('meta');
+            metaTheme.name = "theme-color";
+            metaTheme.content = "{THEME_COLOR}";
+            head.appendChild(metaTheme);
+
+            // 2. iOS向け フルスクリーン表示設定（URLバー非表示）
+            let metaAppleCapable = window.parent.document.createElement('meta');
+            metaAppleCapable.name = "apple-mobile-web-app-capable";
+            metaAppleCapable.content = "yes";
+            head.appendChild(metaAppleCapable);
+
+            // 3. iOS向け ステータスバースタイル
+            let metaAppleStatus = window.parent.document.createElement('meta');
+            metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
+            metaAppleStatus.content = "black-translucent"; 
+            head.appendChild(metaAppleStatus);
+
+            // 4. iOS向け アプリ名
+            let metaAppleTitle = window.parent.document.createElement('meta');
+            metaAppleTitle.name = "apple-mobile-web-app-title";
+            metaAppleTitle.content = "{APP_NAME}";
+            head.appendChild(metaAppleTitle);
+
+            // 5. iOS向け ホーム画面アイコン
+            let linkAppleIcon = window.parent.document.createElement('link');
+            linkAppleIcon.rel = "apple-touch-icon";
+            linkAppleIcon.href = "{ICON_DATA_URI}";
+            head.appendChild(linkAppleIcon);
+
+            // 6. Android向け マニフェスト設定
+            const manifestJSON = {json.dumps(pwa_manifest)};
+            const manifestString = JSON.stringify(manifestJSON);
+            const manifestBlob = new Blob([manifestString], {{type: 'application/json'}});
+            const manifestURL = URL.createObjectURL(manifestBlob);
+
+            let linkManifest = window.parent.document.createElement('link');
+            linkManifest.rel = "manifest";
+            linkManifest.href = manifestURL;
+            head.appendChild(linkManifest);
+
+            // 注入完了フラグ
+            let marker = window.parent.document.createElement('meta');
+            marker.id = 'pwa-injected';
+            head.appendChild(marker);
+        }}
+        </script>
+        """,
+        height=0
+    )
+
+
+# ==========================================
+# 3. CSS設定
+# ==========================================
 st.markdown("""
     <style>
     /* 全体の横スクロールを強制的にオフ */
@@ -280,8 +386,6 @@ elif st.session_state.step == 2:
     
     st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
     
-    # 【重要】on_change に process_submission を設定したことで、
-    # ユーザーが数字を打って「Enter」を押した瞬間に、裏側で確実に送信＆Step1への移行が行われます
     st.text_input(
         "重量を入力 (Enterで確定して送信)", 
         value="",
@@ -293,10 +397,9 @@ elif st.session_state.step == 2:
     col1, col2 = st.columns(2)
     
     with col1:
-        # ボタンクリックでも process_submission を走らせる
         if st.button("✅ 完了", use_container_width=True):
             process_submission()
-            if st.session_state.step == 1: # 送信成功してStep1に切り替わっていればリロード
+            if st.session_state.step == 1: 
                 st.rerun()
                 
     with col2:
