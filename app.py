@@ -49,7 +49,7 @@ if "search_input" not in st.session_state:
 if "weight_input" not in st.session_state:
     st.session_state.weight_input = None
 
-# --- ログインと月選択画面 ---
+# --- ログイン＆月選択画面 ---
 if not st.session_state.username or not st.session_state.target_month:
     st.title("🌾 収穫量記録システム")
     st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
@@ -69,6 +69,7 @@ if not st.session_state.username or not st.session_state.target_month:
             st.warning("ユーザー名を入力してください。")
     st.stop()
 
+# --- データ送信処理 ---
 def submit_harvest(line_str=None):
     weight = st.session_state.weight_input
     if weight is not None and weight > 0:
@@ -90,7 +91,8 @@ def submit_harvest(line_str=None):
         ]
         log_sheet.append_row(new_row)
         
-        st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を {st.session_state.target_month}分 として記録しました！")
+        st.toast(f"✅ {line_str} のデータ（{weight:.2f}{unit}）を記録しました！")
+        # 💡 ここで入力値をリセットすることで、自動的に「ライン検索画面」に戻る仕組みになっています
         st.session_state.weight_input = None
         st.session_state.search_input = ""
 
@@ -98,18 +100,40 @@ def cancel_input():
     st.session_state.weight_input = None
     st.session_state.search_input = ""
 
+
 # --- メイン画面 ---
 st.title("収穫量入力")
 st.caption(f"👤 担当者: {st.session_state.username} | 📅 対象月: {st.session_state.target_month}")
 
 try:
     df_master = load_master_data()
+    df_log = load_log_data()
 except Exception as e:
-    st.error(f"マスタ読み込みエラー: {e}")
+    st.error(f"データ読み込みエラー: {e}")
     st.stop()
 
-search_val = st.text_input("ラインの最初の番号を入力", key="search_input", placeholder="例: 1 (L1 to L9の場合)")
+# --- 月間合計の計算と表示 ---
+total_kg = 0.0
+if not df_log.empty and 'Target Month' in df_log.columns and 'Weight in Grams' in df_log.columns:
+    df_month = df_log[df_log['Target Month'] == st.session_state.target_month]
+    if not df_month.empty:
+        # スプレッドシート上の文字列データを数値に変換して合計する
+        total_g = pd.to_numeric(df_month['Weight in Grams'], errors='coerce').sum()
+        total_kg = total_g / 1000
 
+st.info(f"📊 **{st.session_state.target_month} の合計収穫量: {total_kg:,.2f} kg**")
+
+
+# --- ライン検索（完了ボタン付き横並びレイアウト） ---
+col_s1, col_s2 = st.columns([3, 1])
+with col_s1:
+    search_val = st.text_input("ラインの最初の番号を入力", key="search_input", placeholder="例: 1")
+with col_s2:
+    # 検索ボタンの位置をテキスト入力欄と合わせるための空白設定
+    st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+    st.button("🔍 完了", key="search_btn", use_container_width=True)
+
+# 検索値が入った瞬間に「重量入力」画面が自動で開く
 if search_val:
     matched_row = None
     for index, row in df_master.iterrows():
@@ -123,7 +147,6 @@ if search_val:
         line_name = matched_row.get("Line Number", "")
         st.success(f"📌 対象ライン: **{line_name}**")
         
-        # --- レイアウト変更: 単位と重量の入力を上に配置 ---
         st.radio("単位を選択", ["kg", "g"], index=0, horizontal=True, key="unit_input")
         
         st.number_input(
@@ -140,7 +163,7 @@ if search_val:
         
         btn_col1, btn_col2 = st.columns(2)
         with btn_col1:
-            if st.button("✅ 完了", use_container_width=True):
+            if st.button("✅ 完了", key="submit_btn", use_container_width=True):
                 if st.session_state.weight_input is not None:
                     submit_harvest(line_name)
                     st.rerun()
@@ -150,7 +173,6 @@ if search_val:
         
         st.divider()
 
-        # --- レイアウト変更: 詳細情報を一番下に配置 ---
         st.write("▼ ライン詳細情報")
         cols = st.columns(4)
         cols[0].metric("Mother ID", matched_row.get("Mother Id", "-"))
@@ -165,17 +187,13 @@ st.divider()
 
 # --- 履歴表示 ---
 st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
-try:
-    df_log = load_log_data()
-    if not df_log.empty and 'Target Month' in df_log.columns:
-        df_filtered = df_log[df_log['Target Month'] == st.session_state.target_month]
-        
-        if not df_filtered.empty:
-            df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
-            st.dataframe(df_display, use_container_width=True)
-        else:
-             st.info(f"{st.session_state.target_month} の履歴はまだありません。")
+if not df_log.empty and 'Target Month' in df_log.columns:
+    df_filtered = df_log[df_log['Target Month'] == st.session_state.target_month]
+    
+    if not df_filtered.empty:
+        df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
+        st.dataframe(df_display, use_container_width=True)
     else:
-        st.info("まだ入力履歴がありません。")
-except Exception as e:
-    st.error(f"履歴取得エラー: {e}")
+         st.info(f"{st.session_state.target_month} の履歴はまだありません。")
+else:
+    st.info("まだ入力履歴がありません。")
