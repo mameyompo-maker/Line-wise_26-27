@@ -274,7 +274,7 @@ def process_submission():
 # Step 0: ログイン＆月選択画面
 # ==========================================
 if st.session_state.step == 0:
-    st.title("🌾 収穫量記録システム")
+    st.title("収穫量記録システム")
     st.write("作業を開始する前に、ユーザー名と対象月を選択してください。")
     
     month_options = ["月を選択", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
@@ -322,7 +322,7 @@ if not df_log.empty and len(df_log.columns) >= 3:
     target_col = df_log.columns[2]
     df_month = df_log[df_log[target_col] == st.session_state.target_month]
     sack_count = len(df_month)
-st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
+st.info(f" **{st.session_state.target_month} の完了した袋数: {sack_count} 袋**")
 
 
 # ==========================================
@@ -330,7 +330,7 @@ st.info(f"📊 **{st.session_state.target_month} の完了した袋数: {sack_co
 # ==========================================
 if st.session_state.step == 1:
     
-    if st.button("⬅️ ログイン画面に戻る"):
+    if st.button("ログイン画面に戻る"):
         st.session_state.username = ""
         st.session_state.target_month = ""
         st.session_state.step = 0
@@ -436,7 +436,7 @@ st.divider()
 
 # --- 共通フッター：履歴表示 ---
 if st.session_state.step in [1, 2]:
-    st.subheader(f"📝 {st.session_state.target_month} の入力履歴")
+    st.subheader(f" {st.session_state.target_month} の入力履歴")
     if not df_log.empty and len(df_log.columns) >= 3:
         target_col = df_log.columns[2]
         df_filtered = df_log[df_log[target_col] == st.session_state.target_month]
