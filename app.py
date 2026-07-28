@@ -254,7 +254,7 @@ def process_submission():
 # Step 0: ログイン＆月選択画面
 # ==========================================
 if st.session_state.step == 0:
-    st.title("🌾 Sistema de Registro de Colheita")
+    st.title("Sistema de Registro de Colheita")
     st.write("Antes de iniciar o trabalho, selecione o nome de usuário e o mês alvo.")
     
     month_options = ["Selecione o mês", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
@@ -302,7 +302,7 @@ if not df_log.empty and len(df_log.columns) >= 3:
     target_col = df_log.columns[2]
     df_month = df_log[df_log[target_col] == st.session_state.target_month]
     sack_count = len(df_month)
-st.info(f"📊 **Quantidade de sacos concluídos em {st.session_state.target_month}: {sack_count} sacos**")
+st.info(f"**Quantidade de sacos concluídos em {st.session_state.target_month}: {sack_count} sacos**")
 
 
 # ==========================================
@@ -310,7 +310,7 @@ st.info(f"📊 **Quantidade de sacos concluídos em {st.session_state.target_mon
 # ==========================================
 if st.session_state.step == 1:
     
-    if st.button("⬅️ Voltar à tela de login"):
+    if st.button("Voltar à tela de login"):
         st.session_state.username = ""
         st.session_state.target_month = ""
         st.session_state.step = 0
@@ -414,7 +414,7 @@ st.divider()
 
 # --- 共通フッター：履歴表示 ---
 if st.session_state.step in [1, 2]:
-    st.subheader(f"📝 Histórico de entradas de {st.session_state.target_month}")
+    st.subheader(f"Histórico de entradas de {st.session_state.target_month}")
     if not df_log.empty and len(df_log.columns) >= 3:
         target_col = df_log.columns[2]
         df_filtered = df_log[df_log[target_col] == st.session_state.target_month]
