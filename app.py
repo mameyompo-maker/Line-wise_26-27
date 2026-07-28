@@ -143,20 +143,25 @@ st.markdown("""
             text-align: center !important;
             font-size: 0.8rem !important;
             line-height: 1.2 !important;
+            font-weight: bold !important; /* 文字を少し太くして見やすく */
         }
     }
     
+    /* ▼▼▼ ここから変更：枠線スタイル ▼▼▼ */
+    /* 完了ボタン（緑の枠） */
     div[data-testid="column"]:nth-of-type(1) button {
-        background-color: #28a745 !important;
-        color: white !important;
-        border-color: #28a745 !important;
+        background-color: transparent !important;  /* 背景を透明に */
+        color: #28a745 !important;                 /* 文字色を緑に */
+        border: 2px solid #28a745 !important;      /* 2pxの緑の枠線を設定 */
     }
     
+    /* キャンセルボタン（赤の枠） */
     div[data-testid="column"]:nth-of-type(2) button {
-        background-color: #dc3545 !important;
-        color: white !important;
-        border-color: #dc3545 !important;
+        background-color: transparent !important;  /* 背景を透明に */
+        color: #dc3545 !important;                 /* 文字色を赤に */
+        border: 2px solid #dc3545 !important;      /* 2pxの赤の枠線を設定 */
     }
+    /* ▲▲▲ ここまで ▲▲▲ */
     </style>
 """, unsafe_allow_html=True)
 
@@ -349,7 +354,13 @@ if st.session_state.step == 1:
         <script>
         setTimeout(function() {{
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {{ inputs[inputs.length - 1].focus(); }}
+            if (inputs.length > 0) {{ 
+                let targetInput = inputs[inputs.length - 1];
+                targetInput.focus();
+                // スマホで数字キーボード(整数)を表示する設定
+                targetInput.setAttribute('inputmode', 'numeric');
+                targetInput.setAttribute('pattern', '[0-9]*');
+            }}
         }}, 400);
         </script>
         <!-- timestamp: {time.time()} -->
@@ -405,7 +416,12 @@ elif st.session_state.step == 2:
         <script>
         setTimeout(function() {{
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {{ inputs[inputs.length - 1].focus(); }}
+            if (inputs.length > 0) {{ 
+                let targetInput = inputs[inputs.length - 1];
+                targetInput.focus();
+                // スマホで小数点付き数字キーボードを表示する設定
+                targetInput.setAttribute('inputmode', 'decimal');
+            }}
         }}, 400);
         </script>
         <!-- timestamp: {time.time()} -->
