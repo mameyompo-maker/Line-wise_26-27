@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import re
 import gspread
 from google.oauth2.service_account import Credentials
@@ -229,7 +229,10 @@ def process_submission():
                 client = get_gspread_client()
                 log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
                 
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                # モザンビーク時間 (UTC+2) を設定してタイムスタンプを取得
+                mozambique_tz = timezone(timedelta(hours=2))
+                timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
+                
                 new_row = [
                     timestamp, 
                     st.session_state.username, 
@@ -241,7 +244,7 @@ def process_submission():
                 ]
                 log_sheet.append_row(new_row)
                 
-                st.toast(f"✅ Dados da linha {st.session_state.selected_line} registrados!")
+                st.toast(f"Dados da linha {st.session_state.selected_line} registrados!")
                 
                 st.session_state.weight_input_val = ""
                 st.session_state.form_counter += 1
@@ -360,7 +363,7 @@ if st.session_state.step == 1:
 elif st.session_state.step == 2:
     
     line_name = st.session_state.selected_line
-    st.success(f"📌 Linha selecionada: **{line_name}**")
+    st.success(f"Linha selecionada: **{line_name}**")
     
     st.radio("Selecione a unidade", ["kg", "g"], index=0, horizontal=True, key="unit_input")
     
@@ -375,13 +378,13 @@ elif st.session_state.step == 2:
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("✅ Concluir", use_container_width=True):
+        if st.button("Concluir", use_container_width=True):
             process_submission()
             if st.session_state.step == 1: 
                 st.rerun()
                 
     with col2:
-        if st.button("🚫 Cancelar", use_container_width=True):
+        if st.button("Cancelar", use_container_width=True):
             st.session_state.weight_input_val = ""
             st.session_state.form_counter += 1
             st.session_state.step = 1
