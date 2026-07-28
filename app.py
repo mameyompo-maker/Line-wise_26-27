@@ -146,26 +146,16 @@ st.markdown("""
         }
     }
     
-    /* 完了ボタン (Concluir) を緑色に */
     div[data-testid="column"]:nth-of-type(1) button {
         background-color: #28a745 !important;
         color: white !important;
         border-color: #28a745 !important;
     }
-    div[data-testid="column"]:nth-of-type(1) button:hover {
-        background-color: #218838 !important;
-        border-color: #1e7e34 !important;
-    }
     
-    /* キャンセルボタン (Cancelar) を赤色に */
     div[data-testid="column"]:nth-of-type(2) button {
         background-color: #dc3545 !important;
         color: white !important;
         border-color: #dc3545 !important;
-    }
-    div[data-testid="column"]:nth-of-type(2) button:hover {
-        background-color: #c82333 !important;
-        border-color: #bd2130 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -239,7 +229,7 @@ def process_submission():
                 client = get_gspread_client()
                 log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
                 
-                # モザンビーク時間 (UTC+2)
+                # モザンビーク時間 (UTC+2) を設定してタイムスタンプを取得
                 mozambique_tz = timezone(timedelta(hours=2))
                 timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
                 
@@ -260,7 +250,7 @@ def process_submission():
                 st.session_state.form_counter += 1
                 st.session_state.step = 1
         except ValueError:
-            st.error("Por favor, insira um valor numérico válido.")
+            st.error("⚠️ Por favor, insira um valor numérico válido.")
 
 
 # ==========================================
@@ -283,7 +273,7 @@ if st.session_state.step == 0:
             st.session_state.step = 1
             st.rerun()
         else:
-            st.warning("Por favor, insira o nome de usuário e selecione o mês corretamente.")
+            st.warning("⚠️ Por favor, insira o nome de usuário e selecione o mês corretamente.")
             
     components.html(
         f"""
@@ -300,7 +290,7 @@ if st.session_state.step == 0:
 
 # --- メイン画面共通 ---
 st.title("Inserir Colheita")
-st.caption(f"Responsável: {st.session_state.username} | Mês Alvo: {st.session_state.target_month}")
+st.caption(f"👤 Responsável: {st.session_state.username} | 📅 Mês Alvo: {st.session_state.target_month}")
 
 try:
     df_master = load_master_data()
