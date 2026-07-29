@@ -143,25 +143,21 @@ st.markdown("""
             text-align: center !important;
             font-size: 0.8rem !important;
             line-height: 1.2 !important;
-            font-weight: bold !important; /* 文字を少し太くして見やすく */
+            font-weight: bold !important;
         }
     }
     
-    /* ▼▼▼ ここから変更：枠線スタイル ▼▼▼ */
-    /* 完了ボタン（緑の枠） */
     div[data-testid="column"]:nth-of-type(1) button {
-        background-color: transparent !important;  /* 背景を透明に */
-        color: #28a745 !important;                 /* 文字色を緑に */
-        border: 2px solid #28a745 !important;      /* 2pxの緑の枠線を設定 */
+        background-color: transparent !important; 
+        color: #28a745 !important;                
+        border: 2px solid #28a745 !important;     
     }
     
-    /* キャンセルボタン（赤の枠） */
     div[data-testid="column"]:nth-of-type(2) button {
-        background-color: transparent !important;  /* 背景を透明に */
-        color: #dc3545 !important;                 /* 文字色を赤に */
-        border: 2px solid #dc3545 !important;      /* 2pxの赤の枠線を設定 */
+        background-color: transparent !important; 
+        color: #dc3545 !important;                
+        border: 2px solid #dc3545 !important;     
     }
-    /* ▲▲▲ ここまで ▲▲▲ */
     </style>
 """, unsafe_allow_html=True)
 
@@ -213,7 +209,7 @@ if "selected_line" not in st.session_state:
     st.session_state.selected_line = None
 if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
-if "matched_rows" not in st.session_state: # 重複候補を保持するためのリスト
+if "matched_rows" not in st.session_state:
     st.session_state.matched_rows = []
 if "weight_input_val" not in st.session_state:
     st.session_state.weight_input_val = ""
@@ -236,7 +232,6 @@ def process_submission():
                 client = get_gspread_client()
                 log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
                 
-                # モザンビーク時間 (UTC+2) を設定してタイムスタンプを取得
                 mozambique_tz = timezone(timedelta(hours=2))
                 timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
                 
@@ -331,19 +326,20 @@ if st.session_state.step == 1:
         if search_val:
             matched_rows = []
             for index, row in df_master.iterrows():
-                line_str = str(row.get("Line Number", ""))
-                match = re.search(r'L(\d+)', line_str)
+                line_str = str(row.get("Line Number", "")).strip()
+                # 始まりのL番号を抽出 (例: "L386", "L386 to L393" の最初の "386" にマッチ)
+                match = re.search(r'^L(\d+)', line_str)
                 if match and match.group(1) == search_val:
                     matched_rows.append(row)
             
-            # 見つかった件数で条件分岐
+            # ヒットした件数によって処理を分岐
             if len(matched_rows) == 1:
-                # 1件だけなら直接Step 2へ
+                # 1件しか該当しなければそのままStep 2へ
                 st.session_state.selected_line = matched_rows[0].get("Line Number", "")
                 st.session_state.matched_row = matched_rows[0]
                 st.session_state.step = 2
             elif len(matched_rows) > 1:
-                # 複数ヒットした場合はStep 1.5へ遷移し選択させる
+                # 複数ヒットした場合（同じ番号で始まるセルが2つ以上ある場合）はStep 1.5へ
                 st.session_state.matched_rows = matched_rows
                 st.session_state.step = 1.5
             else:
@@ -376,22 +372,22 @@ if st.session_state.step == 1:
 
 
 # ==========================================
-# Step 1.5: 複数ヒットした場合の選択画面
+# Step 1.5: 同じ開始番号が複数ある場合の選択画面
 # ==========================================
 elif st.session_state.step == 1.5:
     st.warning("⚠️ Foram encontradas várias opções. Por favor, selecione a linha correta:")
     
-    # 候補のリストを作成
-    options = [row.get("Line Number", "") for row in st.session_state.matched_rows]
+    # 見つかったすべての候補をラジオボタンで表示
+    options = [str(row.get("Line Number", "")) for row in st.session_state.matched_rows]
     selected_option = st.radio("Selecione a Linha:", options, index=0)
     
     col1, col2 = st.columns(2)
     with col1:
         if st.button("Confirmar", use_container_width=True):
-            # 選ばれた行を特定してStep 2へ
+            # ユーザーが確定した行を特定してStep 2へ進む
             for row in st.session_state.matched_rows:
-                if row.get("Line Number", "") == selected_option:
-                    st.session_state.selected_line = row.get("Line Number", "")
+                if str(row.get("Line Number", "")) == selected_option:
+                    st.session_state.selected_line = selected_option
                     st.session_state.matched_row = row
                     break
             st.session_state.step = 2
@@ -399,6 +395,7 @@ elif st.session_state.step == 1.5:
             
     with col2:
         if st.button("Cancelar", use_container_width=True):
+            # キャンセルした場合は入力をリセットして元の検索画面に戻る
             st.session_state.form_counter += 1
             st.session_state.step = 1
             st.rerun()
