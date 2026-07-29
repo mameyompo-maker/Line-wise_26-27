@@ -9,7 +9,7 @@
 
   <!-- PWA -->
   <link rel="manifest" href="./manifest.json" />
-  <meta name="theme-color" content="#28a745" />
+  <meta name="theme-color" content="#1F7A4C" />
 
   <!-- iOS -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -28,7 +28,7 @@
       padding: 0;
       height: 100%;
       overflow: hidden;
-      background: #ffffff;
+      background: #F2F4EF;
       overscroll-behavior: none;
       -webkit-tap-highlight-color: transparent;
     }
@@ -53,7 +53,7 @@
     #splash {
       position: fixed;
       inset: 0;
-      background: #ffffff;
+      background: #F2F4EF;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -74,17 +74,19 @@
 
     #splash p {
       margin: 0;
-      color: #28a745;
-      font-weight: 700;
-      font-size: 15px;
-      letter-spacing: .02em;
+      color: #566B5E;
+      font-weight: 600;
+      font-size: 11px;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
 
     .spinner {
       width: 34px;
       height: 34px;
-      border: 3px solid rgba(40, 167, 69, .2);
-      border-top-color: #28a745;
+      border: 3px solid rgba(31, 122, 76, .18);
+      border-top-color: #1F7A4C;
       border-radius: 50%;
       animation: spin .8s linear infinite;
     }
@@ -97,7 +99,7 @@
   <div id="splash">
     <img src="./icon-192.png" alt="" />
     <div class="spinner"></div>
-    <p>Carregando...</p>
+    <p>Carregando</p>
   </div>
 
   <div id="frame-wrap">
@@ -140,4 +142,3 @@
 
 </body>
 </html>
-
