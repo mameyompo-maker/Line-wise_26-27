@@ -213,6 +213,8 @@ if "selected_line" not in st.session_state:
     st.session_state.selected_line = None
 if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
+if "matched_rows" not in st.session_state: # 重複候補を保持するためのリスト
+    st.session_state.matched_rows = []
 if "weight_input_val" not in st.session_state:
     st.session_state.weight_input_val = ""
 
@@ -327,18 +329,23 @@ if st.session_state.step == 1:
     def process_search():
         search_val = st.session_state[f"search_{st.session_state.form_counter}"]
         if search_val:
-            matched_row = None
+            matched_rows = []
             for index, row in df_master.iterrows():
                 line_str = str(row.get("Line Number", ""))
                 match = re.search(r'L(\d+)', line_str)
                 if match and match.group(1) == search_val:
-                    matched_row = row
-                    break
+                    matched_rows.append(row)
             
-            if matched_row is not None:
-                st.session_state.selected_line = matched_row.get("Line Number", "")
-                st.session_state.matched_row = matched_row
+            # 見つかった件数で条件分岐
+            if len(matched_rows) == 1:
+                # 1件だけなら直接Step 2へ
+                st.session_state.selected_line = matched_rows[0].get("Line Number", "")
+                st.session_state.matched_row = matched_rows[0]
                 st.session_state.step = 2
+            elif len(matched_rows) > 1:
+                # 複数ヒットした場合はStep 1.5へ遷移し選択させる
+                st.session_state.matched_rows = matched_rows
+                st.session_state.step = 1.5
             else:
                 st.warning("Número da linha correspondente não encontrado.")
 
@@ -366,6 +373,35 @@ if st.session_state.step == 1:
         <!-- timestamp: {time.time()} -->
         """, height=0
     )
+
+
+# ==========================================
+# Step 1.5: 複数ヒットした場合の選択画面
+# ==========================================
+elif st.session_state.step == 1.5:
+    st.warning("⚠️ Foram encontradas várias opções. Por favor, selecione a linha correta:")
+    
+    # 候補のリストを作成
+    options = [row.get("Line Number", "") for row in st.session_state.matched_rows]
+    selected_option = st.radio("Selecione a Linha:", options, index=0)
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Confirmar", use_container_width=True):
+            # 選ばれた行を特定してStep 2へ
+            for row in st.session_state.matched_rows:
+                if row.get("Line Number", "") == selected_option:
+                    st.session_state.selected_line = row.get("Line Number", "")
+                    st.session_state.matched_row = row
+                    break
+            st.session_state.step = 2
+            st.rerun()
+            
+    with col2:
+        if st.button("Cancelar", use_container_width=True):
+            st.session_state.form_counter += 1
+            st.session_state.step = 1
+            st.rerun()
 
 
 # ==========================================
@@ -432,7 +468,7 @@ elif st.session_state.step == 2:
 st.divider()
 
 # --- 共通フッター：履歴表示 ---
-if st.session_state.step in [1, 2]:
+if st.session_state.step in [1, 1.5, 2]:
     st.subheader(f"Histórico de entradas de {st.session_state.target_month}")
     if not df_log.empty and len(df_log.columns) >= 3:
         target_col = df_log.columns[2]
