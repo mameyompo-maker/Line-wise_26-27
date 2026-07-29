@@ -1,7 +1,7 @@
 // アプリシェル（ラッパー本体）だけをキャッシュする最小構成。
 // Streamlitアプリ本体は常にネットワークから取得する（データが常に最新である必要があるため）。
 
-const CACHE_NAME = 'colheita-shell-v1';
+const CACHE_NAME = 'colheita-shell-v2';
 
 const SHELL_FILES = [
   './',
@@ -55,4 +55,3 @@ self.addEventListener('fetch', (event) => {
     })
   );
 });
-
