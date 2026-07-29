@@ -1,1 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+
+  <title>Reg. Colheita</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="./manifest.json" />
+  <meta name="theme-color" content="#28a745" />
+
+  <!-- iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Reg. Colheita" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
+  <link rel="apple-touch-icon" sizes="512x512" href="./icon-512.png" />
+  <link rel="icon" type="image/png" href="./icon-192.png" />
+
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #ffffff;
+      overscroll-behavior: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* iOSのセーフエリア（ノッチ/ホームバー）を避ける */
+    #frame-wrap {
+      position: fixed;
+      top: env(safe-area-inset-top, 0px);
+      left: env(safe-area-inset-left, 0px);
+      right: env(safe-area-inset-right, 0px);
+      bottom: env(safe-area-inset-bottom, 0px);
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display: block;
+    }
+
+    /* 読み込み中のスプラッシュ */
+    #splash {
+      position: fixed;
+      inset: 0;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 20px;
+      z-index: 10;
+      transition: opacity .4s ease;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    #splash.hidden { opacity: 0; pointer-events: none; }
+
+    #splash img {
+      width: 96px;
+      height: 96px;
+      border-radius: 22px;
+    }
+
+    #splash p {
+      margin: 0;
+      color: #28a745;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: .02em;
+    }
+
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid rgba(40, 167, 69, .2);
+      border-top-color: #28a745;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div id="splash">
+    <img src="./icon-192.png" alt="" />
+    <div class="spinner"></div>
+    <p>Carregando...</p>
+  </div>
+
+  <div id="frame-wrap">
+    <iframe
+      id="app"
+      src="https://line-wise26-27-5t5bh4e67t3xjvevkazpru.streamlit.app/?embed=true"
+      allow="clipboard-read; clipboard-write"
+      referrerpolicy="no-referrer-when-downgrade"></iframe>
+  </div>
+
+  <script>
+    // iframeの読み込み完了でスプラッシュを消す
+    var splash = document.getElementById('splash');
+    var frame  = document.getElementById('app');
+
+    function hideSplash() {
+      splash.classList.add('hidden');
+      setTimeout(function () { splash.style.display = 'none'; }, 500);
+    }
+
+    frame.addEventListener('load', function () {
+      // Streamlitは初期描画に少し時間がかかるので余裕を持たせる
+      setTimeout(hideSplash, 1200);
+    });
+
+    // 保険：一定時間で必ず消す
+    setTimeout(hideSplash, 12000);
+
+    // Service Worker（Chromeでのインストール要件）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js', { scope: './' })
+          .catch(function (e) { console.warn('SW registration failed:', e); });
+      });
+    }
+
+    // ピンチズームを抑止してアプリらしい挙動にする
+    document.addEventListener('gesturestart', function (e) { e.preventDefault(); });
+  </script>
+
+</body>
+</html>
 
