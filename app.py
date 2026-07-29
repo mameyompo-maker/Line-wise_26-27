@@ -10,9 +10,10 @@ import time
 import json
 import base64
 import os
+import shutil
 
 # ==========================================
-# 1. ページ全体基本設定
+# 1. ページ全体の基本設定
 # ==========================================
 st.set_page_config(
     page_title="App Registro de Colheita",
@@ -22,85 +23,92 @@ st.set_page_config(
 )
 
 # ==========================================
-# 2. PWA（スマホアプリ化）のための設定注入
+# 2. PWA（スマホアプリ化）のための設定
 # ==========================================
 APP_NAME = "Reg. Colheita"
+APP_FULL_NAME = "Sistema de Registro de Colheita"
 THEME_COLOR = "#28a745"
 
-# 静的ファイルとして配信されるアイコン/マニフェストのパス
-# (.streamlit/config.toml で enableStaticServing = true が必要)
-STATIC_ICON_192 = "app/static/icon-192.png"
-STATIC_ICON_512 = "app/static/icon-512.png"
-STATIC_MANIFEST = "app/static/manifest.json"
 
-# static/manifest.json を実ファイルとして自動生成しておく
-_static_dir = os.path.join(os.path.dirname(__file__), "static")
-if os.path.isdir(_static_dir):
-    _manifest_path = os.path.join(_static_dir, "manifest.json")
-    _pwa_manifest = {
-        "name": "Sistema de Registro de Colheita",
-        "short_name": APP_NAME,
-        "start_url": ".",
-        "scope": ".",
-        "display": "standalone",
-        "theme_color": THEME_COLOR,
-        "background_color": "#ffffff",
-        "icons": [
-            {"src": STATIC_ICON_192, "sizes": "192x192", "type": "image/png"},
-            {"src": STATIC_ICON_512, "sizes": "512x512", "type": "image/png"}
-        ]
-    }
+def _patch_streamlit_pwa():
+    """
+    ブラウザは「最初に読み込んだHTML」にあるmanifest/アイコンのタグしか
+    見てくれず、後からJavaScriptでタグを差し替えても効かない。
+    そのため、Streamlit本体が配布している静的ファイル
+    (index.html / manifest.json / favicon.png) そのものを直接書き換える。
+
+    1回書き換えれば以降のアクセスには効き続けるので、marker文字列で
+    二重パッチを防いでいる。失敗してもアプリ本体は止めない。
+    """
     try:
-        with open(_manifest_path, "w", encoding="utf-8") as f:
-            json.dump(_pwa_manifest, f, ensure_ascii=False)
-    except OSError:
-        pass  # 読み取り専用環境などでは無視
+        st_static_dir = os.path.join(os.path.dirname(st.__file__), "static")
+        index_path = os.path.join(st_static_dir, "index.html")
+        manifest_path = os.path.join(st_static_dir, "manifest.json")
+        favicon_path = os.path.join(st_static_dir, "favicon.png")
+        apple_icon_path = os.path.join(st_static_dir, "apple-touch-icon.png")
 
-components.html(
-    f"""
-    <script>
-    const head = window.parent.document.getElementsByTagName('head')[0];
+        if not os.path.isdir(st_static_dir) or not os.path.exists(index_path):
+            return
 
-    if (!window.parent.document.getElementById('pwa-injected')) {{
+        with open(index_path, "r", encoding="utf-8") as f:
+            html = f.read()
 
-        let metaTheme = window.parent.document.createElement('meta');
-        metaTheme.name = "theme-color";
-        metaTheme.content = "{THEME_COLOR}";
-        head.appendChild(metaTheme);
+        if "<!-- pwa-patched -->" in html:
+            return  # 既にパッチ済み
 
-        let metaAppleCapable = window.parent.document.createElement('meta');
-        metaAppleCapable.name = "apple-mobile-web-app-capable";
-        metaAppleCapable.content = "yes";
-        head.appendChild(metaAppleCapable);
+        # 1. manifest.json を自分のアプリ用に上書き
+        pwa_manifest = {
+            "name": APP_FULL_NAME,
+            "short_name": APP_NAME,
+            "start_url": "/",
+            "scope": "/",
+            "display": "standalone",
+            "theme_color": THEME_COLOR,
+            "background_color": "#ffffff",
+            "icons": [
+                {"src": "/favicon.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/apple-touch-icon.png", "sizes": "512x512", "type": "image/png"}
+            ]
+        }
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(pwa_manifest, f, ensure_ascii=False)
 
-        let metaAppleStatus = window.parent.document.createElement('meta');
-        metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
-        metaAppleStatus.content = "black-translucent";
-        head.appendChild(metaAppleStatus);
+        # 2. favicon.png / apple-touch-icon.png を自前のアイコンで上書き
+        repo_dir = os.path.dirname(os.path.abspath(__file__))
+        source_icon = os.path.join(repo_dir, "static", "icon-512.png")
+        if not os.path.exists(source_icon):
+            source_icon = os.path.join(repo_dir, "icon.png")
+        if os.path.exists(source_icon):
+            shutil.copyfile(source_icon, favicon_path)
+            shutil.copyfile(source_icon, apple_icon_path)
 
-        let metaAppleTitle = window.parent.document.createElement('meta');
-        metaAppleTitle.name = "apple-mobile-web-app-title";
-        metaAppleTitle.content = "{APP_NAME}";
-        head.appendChild(metaAppleTitle);
+        # 3. index.html にタイトルとメタタグを追記
+        html = html.replace("<title>Streamlit</title>", f"<title>{APP_NAME}</title>")
+        injected_tags = (
+            f'<meta name="theme-color" content="{THEME_COLOR}">'
+            f'<meta name="apple-mobile-web-app-capable" content="yes">'
+            f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+            f'<meta name="apple-mobile-web-app-title" content="{APP_NAME}">'
+            f'<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
+            f'<!-- pwa-patched -->'
+        )
+        if '<link rel="shortcut icon" href="/favicon.png" />' in html:
+            html = html.replace(
+                '<link rel="shortcut icon" href="/favicon.png" />',
+                '<link rel="shortcut icon" href="/favicon.png" />' + injected_tags
+            )
+        else:
+            # バージョン差でタグの書式が違う場合の保険：</head>の直前に挿入
+            html = html.replace("</head>", injected_tags + "</head>")
 
-        let linkAppleIcon = window.parent.document.createElement('link');
-        linkAppleIcon.rel = "apple-touch-icon";
-        linkAppleIcon.href = "{STATIC_ICON_192}";
-        head.appendChild(linkAppleIcon);
+        with open(index_path, "w", encoding="utf-8") as f:
+            f.write(html)
 
-        let linkManifest = window.parent.document.createElement('link');
-        linkManifest.rel = "manifest";
-        linkManifest.href = "{STATIC_MANIFEST}";
-        head.appendChild(linkManifest);
+    except Exception:
+        pass  # PWA化に失敗してもアプリ本体には影響させない
 
-        let marker = window.parent.document.createElement('meta');
-        marker.id = 'pwa-injected';
-        head.appendChild(marker);
-    }}
-    </script>
-    """,
-    height=0
-)
+
+_patch_streamlit_pwa()
 
 
 # ==========================================
