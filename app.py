@@ -7,10 +7,7 @@ from google.oauth2.service_account import Credentials
 import unicodedata
 import streamlit.components.v1 as components
 import time
-import json
-import base64
 import os
-import shutil
 
 # ==========================================
 # 1. ページ全体の基本設定
@@ -21,125 +18,6 @@ st.set_page_config(
     layout="centered",
     initial_sidebar_state="collapsed"
 )
-
-# ==========================================
-# 2. PWA（スマホアプリ化）のための設定
-# ==========================================
-APP_NAME = "Reg. Colheita"
-APP_FULL_NAME = "Sistema de Registro de Colheita"
-THEME_COLOR = "#28a745"
-
-
-def _patch_streamlit_pwa():
-    """
-    Streamlit本体が配布している静的ファイル
-    (index.html / manifest.json / favicon.png) を直接書き換えてPWA化する。
-    各ステップの結果を辞書で返し、?debug=1 で確認できるようにする。
-    """
-    log = {}
-    try:
-        st_static_dir = os.path.join(os.path.dirname(st.__file__), "static")
-        index_path = os.path.join(st_static_dir, "index.html")
-        manifest_path = os.path.join(st_static_dir, "manifest.json")
-        favicon_path = os.path.join(st_static_dir, "favicon.png")
-        apple_icon_path = os.path.join(st_static_dir, "apple-touch-icon.png")
-
-        log["streamlit_version"] = st.__version__
-        log["static_dir"] = st_static_dir
-        log["static_dir_exists"] = os.path.isdir(st_static_dir)
-        log["index_exists"] = os.path.exists(index_path)
-        log["writable"] = os.access(st_static_dir, os.W_OK)
-
-        if not log["static_dir_exists"] or not log["index_exists"]:
-            log["result"] = "NG: Streamlitのstaticフォルダが見つからない"
-            return log
-
-        with open(index_path, "r", encoding="utf-8") as f:
-            html = f.read()
-
-        log["index_size"] = len(html)
-        log["has_title_tag"] = "<title>Streamlit</title>" in html
-        log["has_shortcut_icon"] = '<link rel="shortcut icon" href="/favicon.png" />' in html
-        log["has_manifest_link"] = 'rel="manifest"' in html
-        log["head_snippet"] = html[:800]
-
-        if "<!-- pwa-patched -->" in html:
-            log["result"] = "OK: 既にパッチ適用済み"
-            return log
-
-        # 1. manifest.json を自分のアプリ用に上書き
-        pwa_manifest = {
-            "name": APP_FULL_NAME,
-            "short_name": APP_NAME,
-            "start_url": "/",
-            "scope": "/",
-            "display": "standalone",
-            "theme_color": THEME_COLOR,
-            "background_color": "#ffffff",
-            "icons": [
-                {"src": "/favicon.png", "sizes": "192x192", "type": "image/png"},
-                {"src": "/apple-touch-icon.png", "sizes": "512x512", "type": "image/png"}
-            ]
-        }
-        with open(manifest_path, "w", encoding="utf-8") as f:
-            json.dump(pwa_manifest, f, ensure_ascii=False)
-        log["manifest_written"] = True
-
-        # 2. favicon.png / apple-touch-icon.png を自前のアイコンで上書き
-        repo_dir = os.path.dirname(os.path.abspath(__file__))
-        source_icon = os.path.join(repo_dir, "static", "icon-512.png")
-        if not os.path.exists(source_icon):
-            source_icon = os.path.join(repo_dir, "icon.png")
-        log["source_icon"] = source_icon
-        log["source_icon_exists"] = os.path.exists(source_icon)
-        if log["source_icon_exists"]:
-            shutil.copyfile(source_icon, favicon_path)
-            shutil.copyfile(source_icon, apple_icon_path)
-            log["icons_copied"] = True
-
-        # 3. index.html にタイトルとメタタグを追記
-        html = html.replace("<title>Streamlit</title>", f"<title>{APP_NAME}</title>")
-        injected_tags = (
-            f'<link rel="manifest" href="/manifest.json">'
-            f'<meta name="theme-color" content="{THEME_COLOR}">'
-            f'<meta name="apple-mobile-web-app-capable" content="yes">'
-            f'<meta name="mobile-web-app-capable" content="yes">'
-            f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
-            f'<meta name="apple-mobile-web-app-title" content="{APP_NAME}">'
-            f'<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
-            f'<!-- pwa-patched -->'
-        )
-        # 既存のmanifestリンクがあれば先に除去（重複防止）
-        html = re.sub(r'<link[^>]*rel="manifest"[^>]*>', '', html)
-
-        if "</head>" in html:
-            html = html.replace("</head>", injected_tags + "</head>", 1)
-            log["injection_point"] = "</head>"
-        else:
-            log["result"] = "NG: </head>が見つからない"
-            return log
-
-        with open(index_path, "w", encoding="utf-8") as f:
-            f.write(html)
-        log["index_written"] = True
-        log["result"] = "OK: パッチを新規適用した"
-
-    except Exception as e:
-        log["result"] = f"NG: 例外発生 → {type(e).__name__}: {e}"
-    return log
-
-
-PWA_LOG = _patch_streamlit_pwa()
-
-# ?debug=1 を付けてアクセスすると診断結果を表示
-try:
-    _qp = dict(st.query_params)
-except Exception:
-    _qp = st.experimental_get_query_params()
-if _qp.get("debug"):
-    st.warning("🔧 PWA診断モード")
-    st.json(PWA_LOG)
-    st.stop()
 
 
 # ==========================================
