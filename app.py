@@ -12,7 +12,7 @@ import base64
 import os
 
 # ==========================================
-# 1. ページ全体の基本設定
+# 1. ページ全体基本設定
 # ==========================================
 st.set_page_config(
     page_title="App Registro de Colheita",
