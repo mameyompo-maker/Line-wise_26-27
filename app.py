@@ -24,82 +24,83 @@ st.set_page_config(
 # ==========================================
 # 2. PWA（スマホアプリ化）のための設定注入
 # ==========================================
-def get_base64_image(image_path):
-    if os.path.exists(image_path):
-        with open(image_path, "rb") as img_file:
-            encoded_string = base64.b64encode(img_file.read()).decode()
-            return f"data:image/png;base64,{encoded_string}"
-    return ""
-
-ICON_DATA_URI = get_base64_image("icon.png")
-
 APP_NAME = "Reg. Colheita"
 THEME_COLOR = "#28a745"
 
-if ICON_DATA_URI:
-    pwa_manifest = {
+# 静的ファイルとして配信されるアイコン/マニフェストのパス
+# (.streamlit/config.toml で enableStaticServing = true が必要)
+STATIC_ICON_192 = "app/static/icon-192.png"
+STATIC_ICON_512 = "app/static/icon-512.png"
+STATIC_MANIFEST = "app/static/manifest.json"
+
+# static/manifest.json を実ファイルとして自動生成しておく
+_static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.isdir(_static_dir):
+    _manifest_path = os.path.join(_static_dir, "manifest.json")
+    _pwa_manifest = {
         "name": "Sistema de Registro de Colheita",
         "short_name": APP_NAME,
         "start_url": ".",
+        "scope": ".",
         "display": "standalone",
         "theme_color": THEME_COLOR,
         "background_color": "#ffffff",
         "icons": [
-            {"src": ICON_DATA_URI, "sizes": "192x192", "type": "image/png"},
-            {"src": ICON_DATA_URI, "sizes": "512x512", "type": "image/png"}
+            {"src": STATIC_ICON_192, "sizes": "192x192", "type": "image/png"},
+            {"src": STATIC_ICON_512, "sizes": "512x512", "type": "image/png"}
         ]
     }
+    try:
+        with open(_manifest_path, "w", encoding="utf-8") as f:
+            json.dump(_pwa_manifest, f, ensure_ascii=False)
+    except OSError:
+        pass  # 読み取り専用環境などでは無視
 
-    components.html(
-        f"""
-        <script>
-        const head = window.parent.document.getElementsByTagName('head')[0];
+components.html(
+    f"""
+    <script>
+    const head = window.parent.document.getElementsByTagName('head')[0];
 
-        if (!window.parent.document.getElementById('pwa-injected')) {{
+    if (!window.parent.document.getElementById('pwa-injected')) {{
 
-            let metaTheme = window.parent.document.createElement('meta');
-            metaTheme.name = "theme-color";
-            metaTheme.content = "{THEME_COLOR}";
-            head.appendChild(metaTheme);
+        let metaTheme = window.parent.document.createElement('meta');
+        metaTheme.name = "theme-color";
+        metaTheme.content = "{THEME_COLOR}";
+        head.appendChild(metaTheme);
 
-            let metaAppleCapable = window.parent.document.createElement('meta');
-            metaAppleCapable.name = "apple-mobile-web-app-capable";
-            metaAppleCapable.content = "yes";
-            head.appendChild(metaAppleCapable);
+        let metaAppleCapable = window.parent.document.createElement('meta');
+        metaAppleCapable.name = "apple-mobile-web-app-capable";
+        metaAppleCapable.content = "yes";
+        head.appendChild(metaAppleCapable);
 
-            let metaAppleStatus = window.parent.document.createElement('meta');
-            metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
-            metaAppleStatus.content = "black-translucent";
-            head.appendChild(metaAppleStatus);
+        let metaAppleStatus = window.parent.document.createElement('meta');
+        metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
+        metaAppleStatus.content = "black-translucent";
+        head.appendChild(metaAppleStatus);
 
-            let metaAppleTitle = window.parent.document.createElement('meta');
-            metaAppleTitle.name = "apple-mobile-web-app-title";
-            metaAppleTitle.content = "{APP_NAME}";
-            head.appendChild(metaAppleTitle);
+        let metaAppleTitle = window.parent.document.createElement('meta');
+        metaAppleTitle.name = "apple-mobile-web-app-title";
+        metaAppleTitle.content = "{APP_NAME}";
+        head.appendChild(metaAppleTitle);
 
-            let linkAppleIcon = window.parent.document.createElement('link');
-            linkAppleIcon.rel = "apple-touch-icon";
-            linkAppleIcon.href = "{ICON_DATA_URI}";
-            head.appendChild(linkAppleIcon);
+        let linkAppleIcon = window.parent.document.createElement('link');
+        linkAppleIcon.rel = "apple-touch-icon";
+        linkAppleIcon.href = "{STATIC_ICON_192}";
+        head.appendChild(linkAppleIcon);
 
-            const manifestJSON = {json.dumps(pwa_manifest)};
-            const manifestString = JSON.stringify(manifestJSON);
-            const manifestBlob = new Blob([manifestString], {{type: 'application/json'}});
-            const manifestURL = URL.createObjectURL(manifestBlob);
+        let linkManifest = window.parent.document.createElement('link');
+        linkManifest.rel = "manifest";
+        linkManifest.href = "{STATIC_MANIFEST}";
+        head.appendChild(linkManifest);
 
-            let linkManifest = window.parent.document.createElement('link');
-            linkManifest.rel = "manifest";
-            linkManifest.href = manifestURL;
-            head.appendChild(linkManifest);
-
-            let marker = window.parent.document.createElement('meta');
-            marker.id = 'pwa-injected';
-            head.appendChild(marker);
-        }}
-        </script>
-        """,
-        height=0
-    )
+        let marker = window.parent.document.createElement('meta');
+        marker.id = 'pwa-injected';
+        head.appendChild(marker);
+    }}
+    </script>
+    """,
+    height=0
+)
 
 
 # ==========================================
@@ -160,13 +161,6 @@ st.markdown("""
         color: #dc3545 !important;
         border: 2px solid #dc3545 !important;
     }
-
-    /* 候補選択ボタン（青の枠・大きめ） */
-    div[data-testid="stVerticalBlock"] div.cand-zone + div button {
-        border: 2px solid #0d6efd !important;
-        color: #0d6efd !important;
-        background-color: transparent !important;
-    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -219,8 +213,6 @@ if "selected_line" not in st.session_state:
     st.session_state.selected_line = None
 if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
-if "weight_input_val" not in st.session_state:
-    st.session_state.weight_input_val = ""
 if "candidate_rows" not in st.session_state:
     st.session_state.candidate_rows = []
 if "searched_number" not in st.session_state:
@@ -233,31 +225,31 @@ if "search_error" not in st.session_state:
 # ライン番号のパース用ヘルパー
 # ==========================================
 def get_line_numbers(line_str):
-    """ 'L586' -> [586] / 'L586 to L593' や 'L586-L593' -> [586, 593] """
+    """'L586' -> [586] / 'L586 to L593' や 'L586-L593' -> [586, 593]"""
     nums = re.findall(r'L\s*(\d+)', str(line_str), flags=re.IGNORECASE)
     return [int(n) for n in nums]
+
 
 def get_first_number(line_str):
     nums = get_line_numbers(line_str)
     return nums[0] if nums else None
 
+
 def describe_row(row):
-    """ 選択ボタンに出す説明文 """
-    line_str = str(row.get("Line Number", ""))
-    nums = get_line_numbers(line_str)
+    """選択ボタンに出す説明文"""
+    nums = get_line_numbers(row.get("Line Number", ""))
     if len(nums) >= 2:
         span = nums[-1] - nums[0] + 1
-        kind = f"Faixa de {span} linhas ({nums[0]}–{nums[-1]})"
-    else:
-        kind = "Linha única"
-    return kind
+        return f"Faixa de {span} linhas ({nums[0]}-{nums[-1]})"
+    return "Linha unica"
 
 
 # ==========================================
 # 共通送信関数
 # ==========================================
 def process_submission():
-    weight_val = st.session_state.get("weight_input_val", "")
+    weight_key = f"weight_{st.session_state.form_counter}"
+    weight_val = st.session_state.get(weight_key, "")
     if weight_val:
         try:
             weight_str = unicodedata.normalize('NFKC', weight_val)
@@ -287,7 +279,6 @@ def process_submission():
 
                 st.toast(f"Dados da linha {st.session_state.selected_line} registrados!")
 
-                st.session_state.weight_input_val = ""
                 st.session_state.candidate_rows = []
                 st.session_state.searched_number = ""
                 st.session_state.form_counter += 1
@@ -326,7 +317,8 @@ if st.session_state.step == 0:
             if (inputs.length > 0) { inputs[0].focus(); }
         }, 400);
         </script>
-        """, height=0
+        """,
+        height=0
     )
     st.stop()
 
@@ -352,7 +344,7 @@ st.info(f"**Quantidade de sacos concluídos em {st.session_state.target_month}: 
 
 
 def already_registered(line_name):
-    """ その月に同じ Line Number が既に登録済みか """
+    """その月に同じ Line Number が既に登録済みか"""
     if df_log.empty or len(df_log.columns) < 4:
         return False
     month_col = df_log.columns[2]
@@ -436,7 +428,8 @@ if st.session_state.step == 1:
         }}, 400);
         </script>
         <!-- timestamp: {time.time()} -->
-        """, height=0
+        """,
+        height=0
     )
 
 
@@ -446,21 +439,19 @@ if st.session_state.step == 1:
 elif st.session_state.step == 15:
 
     st.warning(
-        f"⚠️ Existem **{len(st.session_state.candidate_rows)} registros** que começam com "
+        f"⚠️ Existem {len(st.session_state.candidate_rows)} registros que começam com "
         f"**{st.session_state.searched_number}**. Selecione qual deseja usar."
     )
-
-    st.markdown('<div class="cand-zone"></div>', unsafe_allow_html=True)
 
     for i, row in enumerate(st.session_state.candidate_rows):
         line_name = str(row.get("Line Number", "")).strip()
         kind = describe_row(row)
-        mark = " ✅ já registrado" if already_registered(line_name) else ""
+        mark = "  ✅ já registrado" if already_registered(line_name) else ""
 
         label = (
-            f"{line_name}\n"
-            f"{kind} ・ Saco: {row.get('Sack Number', '-')} ・ "
-            f"Var.: {row.get('Variety', '-')} ・ "
+            f"{line_name}  |  {kind}  |  "
+            f"Saco: {row.get('Sack Number', '-')}  |  "
+            f"Var.: {row.get('Variety', '-')}  |  "
             f"Plantas: {row.get('Total no.of plant', '-')}{mark}"
         )
 
@@ -493,7 +484,7 @@ elif st.session_state.step == 2:
     st.text_input(
         "Insira o peso (Enter para confirmar e enviar)",
         placeholder="Ex: 1.5",
-        key="weight_input_val",
+        key=f"weight_{st.session_state.form_counter}",
         on_change=process_submission
     )
 
@@ -507,7 +498,6 @@ elif st.session_state.step == 2:
 
     with col2:
         if st.button("Cancelar", use_container_width=True):
-            st.session_state.weight_input_val = ""
             st.session_state.candidate_rows = []
             st.session_state.form_counter += 1
             st.session_state.step = 1
@@ -536,7 +526,8 @@ elif st.session_state.step == 2:
         }}, 400);
         </script>
         <!-- timestamp: {time.time()} -->
-        """, height=0
+        """,
+        height=0
     )
 
 
