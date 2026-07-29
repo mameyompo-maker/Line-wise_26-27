@@ -132,31 +132,32 @@ div[data-testid="stMainBlockContainer"] {
 }
 /* ================= 計量パネル（署名要素） ================= */
 .readout {
-  background: var(--panel);
+  background: var(--card);
+  border: 1px solid var(--line);
   border-radius: 16px;
-  padding: 16px 18px 10px;
-  margin-bottom: 4px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
 }
 .readout .tag {
   font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: .14em;
   text-transform: uppercase;
-  color: #6F8A79;
+  color: var(--ink-soft);
   margin-bottom: 6px;
 }
 .readout .line-code {
   font-family: var(--font-mono);
   font-size: 32px;
   font-weight: 700;
-  color: var(--digit);
+  color: var(--green-dark);
   letter-spacing: -.01em;
   line-height: 1.1;
   word-break: break-word;
 }
 .readout .sub {
   font-size: 12px;
-  color: #8CA697;
+  color: var(--ink-soft);
   margin-top: 6px;
 }
 /* 計量パネル内の重量入力欄を「表示窓」にする */
@@ -164,14 +165,13 @@ div[data-testid="stMainBlockContainer"] {
   background: var(--panel) !important;
   color: var(--digit) !important;
   border: none !important;
-  border-top: 1px solid #2C3D34 !important;
-  border-radius: 0 0 16px 16px !important;
+  border-radius: 18px !important;
   font-family: var(--font-mono) !important;
   font-size: 40px !important;
   font-weight: 700 !important;
   text-align: right !important;
   letter-spacing: -.02em !important;
-  padding: 10px 18px 18px !important;
+  padding: 18px 20px !important;
   height: auto !important;
   box-shadow: none !important;
   caret-color: var(--digit);
@@ -183,7 +183,15 @@ div[data-testid="stMainBlockContainer"] {
 .st-key-weightpanel div[data-testid="stTextInput"] > div {
   background: var(--panel) !important;
   border: none !important;
-  border-radius: 0 0 16px 16px !important;
+  border-radius: 18px !important;
+  box-shadow: none !important;
+}
+.st-key-weightpanel div[data-baseweb="input"],
+.st-key-weightpanel div[data-baseweb="base-input"] {
+  background: var(--panel) !important;
+  border: none !important;
+  border-radius: 18px !important;
+  box-shadow: none !important;
 }
 .st-key-weightpanel div[data-testid="stTextInput"] label { display: none !important; }
 /* ================= 検索入力（大きく） ================= */
@@ -230,10 +238,8 @@ div[data-testid="stMainBlockContainer"] {
   color: var(--ink-soft) !important;
 }
 /* ================= 単位トグル（セグメント） ================= */
-div[data-testid="stRadio"] > label { display: none !important; }
-div[data-testid="stRadio"] div[role="radiogroup"] {
-  display: grid !important;
-  grid-template-columns: 1fr 1fr !important;
+/* 単位トグル（自作ボタン式） */
+.st-key-unitrow div[data-testid="stHorizontalBlock"] {
   gap: 6px !important;
   background: var(--card);
   border: 1px solid var(--line);
@@ -241,31 +247,27 @@ div[data-testid="stRadio"] div[role="radiogroup"] {
   padding: 5px;
   margin-top: 10px;
 }
-div[data-testid="stRadio"] div[role="radiogroup"] label {
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  margin: 0 !important;
-  padding: 11px 0 !important;
-  border-radius: 8px !important;
-  cursor: pointer;
-  transition: background .15s ease;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] label > div:first-child {
-  display: none !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] label p {
+.st-key-unit_kg_off div[data-testid="stButton"] > button,
+.st-key-unit_g_off div[data-testid="stButton"] > button {
+  background: transparent !important;
+  border: none !important;
+  color: var(--ink-soft) !important;
   font-family: var(--font-mono) !important;
   font-size: 15px !important;
   font-weight: 600 !important;
-  color: var(--ink-soft) !important;
-  margin: 0 !important;
+  min-height: 44px !important;
+  border-radius: 8px !important;
 }
-div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
+.st-key-unit_kg_on div[data-testid="stButton"] > button,
+.st-key-unit_g_on div[data-testid="stButton"] > button {
   background: var(--ink) !important;
-}
-div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) p {
+  border: none !important;
   color: #FFFFFF !important;
+  font-family: var(--font-mono) !important;
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  min-height: 44px !important;
+  border-radius: 8px !important;
 }
 /* ================= ボタン共通 ================= */
 div[data-testid="stButton"] > button {
@@ -286,23 +288,34 @@ div[data-testid="stButton"] > button:focus-visible {
   outline-offset: 2px !important;
 }
 /* 主要アクション（緑・塗り） */
-.st-key-btn_confirm button, .st-key-btn_login button, .st-key-btn_force button {
+.st-key-btn_confirm div[data-testid="stButton"] > button,
+.st-key-btn_login div[data-testid="stButton"] > button,
+.st-key-btn_force div[data-testid="stButton"] > button {
   background: var(--green) !important;
   border-color: var(--green) !important;
   color: #FFFFFF !important;
 }
-.st-key-btn_confirm button:hover, .st-key-btn_login button:hover, .st-key-btn_force button:hover {
+.st-key-btn_confirm div[data-testid="stButton"] > button:hover,
+.st-key-btn_login div[data-testid="stButton"] > button:hover,
+.st-key-btn_force div[data-testid="stButton"] > button:hover {
   background: var(--green-dark) !important;
   border-color: var(--green-dark) !important;
 }
 /* 取り消し（赤・枠） */
-.st-key-btn_cancel button, .st-key-btn_fix button {
-  background: var(--card) !important;
+.st-key-btn_cancel div[data-testid="stButton"] > button,
+.st-key-btn_fix div[data-testid="stButton"] > button {
+  background: var(--red-soft) !important;
   border-color: var(--red) !important;
   color: var(--red) !important;
 }
+.st-key-btn_cancel div[data-testid="stButton"] > button:hover,
+.st-key-btn_fix div[data-testid="stButton"] > button:hover {
+  background: var(--red) !important;
+  color: #FFFFFF !important;
+}
 /* 控えめなリンク風ボタン */
-.st-key-btn_logout button, .st-key-btn_back button {
+.st-key-btn_logout div[data-testid="stButton"] > button,
+.st-key-btn_back div[data-testid="stButton"] > button {
   background: transparent !important;
   border: none !important;
   color: var(--ink-soft) !important;
@@ -430,6 +443,23 @@ div[data-testid="stButton"] > button:focus-visible {
   letter-spacing: -.02em;
 }
 .login-head p { font-size: 14px; color: var(--ink-soft); margin: 0; line-height: 1.55; }
+/* 横並びの列はスマホでも維持する */
+div[data-testid="stHorizontalBlock"] {
+  display: grid !important;
+  grid-template-columns: 1fr 1fr !important;
+  gap: 10px !important;
+  width: 100% !important;
+}
+div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  flex: 1 1 0 !important;
+}
+div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button p {
+  white-space: normal !important;
+  word-break: break-word !important;
+}
 hr, div[data-testid="stDivider"] { border-color: var(--line) !important; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
@@ -728,7 +758,7 @@ if st.session_state.step == 1:
     with st.container(key="searchpanel"):
         st.text_input(
             "Número da linha",
-            placeholder="586",
+            placeholder="1",
             key=f"search_{st.session_state.form_counter}",
             on_change=process_search,
             label_visibility="collapsed"
@@ -847,8 +877,19 @@ elif st.session_state.step == 2:
             label_visibility="collapsed"
         )
 
-    st.radio("Unidade", ["kg", "g"], index=0, horizontal=True,
-             key="unit_input", label_visibility="collapsed")
+    _unit = st.session_state.get("unit_input", "kg")
+    with st.container(key="unitrow"):
+        u1, u2 = st.columns(2)
+        with u1:
+            with st.container(key=f"unit_kg_{'on' if _unit == 'kg' else 'off'}"):
+                if st.button("kg", use_container_width=True, key="pick_kg"):
+                    st.session_state.unit_input = "kg"
+                    st.rerun()
+        with u2:
+            with st.container(key=f"unit_g_{'on' if _unit == 'g' else 'off'}"):
+                if st.button("g", use_container_width=True, key="pick_g"):
+                    st.session_state.unit_input = "g"
+                    st.rerun()
 
     c1, c2 = st.columns(2)
     with c1:
