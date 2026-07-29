@@ -493,3 +493,66 @@ elif st.session_state.step == 2:
     st.text_input(
         "Insira o peso (Enter para confirmar e enviar)",
         placeholder="Ex: 1.5",
+        key="weight_input_val",
+        on_change=process_submission
+    )
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button("Concluir", use_container_width=True):
+            process_submission()
+            if st.session_state.step == 1:
+                st.rerun()
+
+    with col2:
+        if st.button("Cancelar", use_container_width=True):
+            st.session_state.weight_input_val = ""
+            st.session_state.candidate_rows = []
+            st.session_state.form_counter += 1
+            st.session_state.step = 1
+            st.rerun()
+
+    st.divider()
+
+    st.write("▼ Detalhes da Linha")
+    row_data = st.session_state.matched_row
+    cols = st.columns(4)
+    cols[0].metric("ID da Mãe", row_data.get("Mother Id", "-"))
+    cols[1].metric("Variedade", row_data.get("Variety", "-"))
+    cols[2].metric("Nº do Saco", row_data.get("Sack Number", "-"))
+    cols[3].metric("Total de Plantas", row_data.get("Total no.of plant", "-"))
+
+    components.html(
+        f"""
+        <script>
+        setTimeout(function() {{
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            if (inputs.length > 0) {{
+                let targetInput = inputs[inputs.length - 1];
+                targetInput.focus();
+                targetInput.setAttribute('inputmode', 'decimal');
+            }}
+        }}, 400);
+        </script>
+        <!-- timestamp: {time.time()} -->
+        """, height=0
+    )
+
+
+st.divider()
+
+# --- 共通フッター：履歴表示 ---
+if st.session_state.step in [1, 2, 15]:
+    st.subheader(f"Histórico de entradas de {st.session_state.target_month}")
+    if not df_log.empty and len(df_log.columns) >= 3:
+        target_col = df_log.columns[2]
+        df_filtered = df_log[df_log[target_col] == st.session_state.target_month]
+
+        if not df_filtered.empty:
+            df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
+            st.dataframe(df_display, use_container_width=True)
+        else:
+            st.info(f"Ainda não há histórico para {st.session_state.target_month}.")
+    else:
+        st.info("Ainda não há histórico de entradas.")
