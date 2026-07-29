@@ -15,9 +15,9 @@ import os
 # 1. ページ全体の基本設定
 # ==========================================
 st.set_page_config(
-    page_title="App Registro de Colheita", 
-    page_icon="icon.png", 
-    layout="centered", 
+    page_title="App Registro de Colheita",
+    page_icon="icon.png",
+    layout="centered",
     initial_sidebar_state="collapsed"
 )
 
@@ -54,9 +54,9 @@ if ICON_DATA_URI:
         f"""
         <script>
         const head = window.parent.document.getElementsByTagName('head')[0];
-        
+
         if (!window.parent.document.getElementById('pwa-injected')) {{
-            
+
             let metaTheme = window.parent.document.createElement('meta');
             metaTheme.name = "theme-color";
             metaTheme.content = "{THEME_COLOR}";
@@ -69,7 +69,7 @@ if ICON_DATA_URI:
 
             let metaAppleStatus = window.parent.document.createElement('meta');
             metaAppleStatus.name = "apple-mobile-web-app-status-bar-style";
-            metaAppleStatus.content = "black-translucent"; 
+            metaAppleStatus.content = "black-translucent";
             head.appendChild(metaAppleStatus);
 
             let metaAppleTitle = window.parent.document.createElement('meta');
@@ -118,14 +118,14 @@ st.markdown("""
             gap: 10px !important;
             width: 100% !important;
         }
-        
+
         div[data-testid="stHorizontalBlock"] > div[data-testid="column"] {
             width: 100% !important;
             min-width: 0px !important;
             max-width: 100% !important;
             padding: 0 !important;
         }
-        
+
         div[data-testid="stHorizontalBlock"] button {
             width: 100% !important;
             min-width: 0px !important;
@@ -134,29 +134,38 @@ st.markdown("""
             padding: 4px !important;
             margin: 0 !important;
         }
-        
+
         div[data-testid="stHorizontalBlock"] button p,
         div[data-testid="stHorizontalBlock"] button div,
         div[data-testid="stHorizontalBlock"] button span {
-            white-space: normal !important; 
-            word-wrap: break-word !important; 
+            white-space: normal !important;
+            word-wrap: break-word !important;
             text-align: center !important;
             font-size: 0.8rem !important;
             line-height: 1.2 !important;
             font-weight: bold !important;
         }
     }
-    
+
+    /* 完了ボタン（緑の枠） */
     div[data-testid="column"]:nth-of-type(1) button {
-        background-color: transparent !important; 
-        color: #28a745 !important;                
-        border: 2px solid #28a745 !important;     
+        background-color: transparent !important;
+        color: #28a745 !important;
+        border: 2px solid #28a745 !important;
     }
-    
+
+    /* キャンセルボタン（赤の枠） */
     div[data-testid="column"]:nth-of-type(2) button {
-        background-color: transparent !important; 
-        color: #dc3545 !important;                
-        border: 2px solid #dc3545 !important;     
+        background-color: transparent !important;
+        color: #dc3545 !important;
+        border: 2px solid #dc3545 !important;
+    }
+
+    /* 候補選択ボタン（青の枠・大きめ） */
+    div[data-testid="stVerticalBlock"] div.cand-zone + div button {
+        border: 2px solid #0d6efd !important;
+        color: #0d6efd !important;
+        background-color: transparent !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -183,6 +192,7 @@ def load_master_data():
     data = sheet.get_all_values()
     if len(data) > 0:
         df = pd.DataFrame(data[1:], columns=data[0])
+        df.columns = df.columns.astype(str).str.strip()
         return df
     return pd.DataFrame()
 
@@ -209,10 +219,38 @@ if "selected_line" not in st.session_state:
     st.session_state.selected_line = None
 if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
-if "matched_rows" not in st.session_state:
-    st.session_state.matched_rows = []
 if "weight_input_val" not in st.session_state:
     st.session_state.weight_input_val = ""
+if "candidate_rows" not in st.session_state:
+    st.session_state.candidate_rows = []
+if "searched_number" not in st.session_state:
+    st.session_state.searched_number = ""
+if "search_error" not in st.session_state:
+    st.session_state.search_error = ""
+
+
+# ==========================================
+# ライン番号のパース用ヘルパー
+# ==========================================
+def get_line_numbers(line_str):
+    """ 'L586' -> [586] / 'L586 to L593' や 'L586-L593' -> [586, 593] """
+    nums = re.findall(r'L\s*(\d+)', str(line_str), flags=re.IGNORECASE)
+    return [int(n) for n in nums]
+
+def get_first_number(line_str):
+    nums = get_line_numbers(line_str)
+    return nums[0] if nums else None
+
+def describe_row(row):
+    """ 選択ボタンに出す説明文 """
+    line_str = str(row.get("Line Number", ""))
+    nums = get_line_numbers(line_str)
+    if len(nums) >= 2:
+        span = nums[-1] - nums[0] + 1
+        kind = f"Faixa de {span} linhas ({nums[0]}–{nums[-1]})"
+    else:
+        kind = "Linha única"
+    return kind
 
 
 # ==========================================
@@ -224,31 +262,34 @@ def process_submission():
         try:
             weight_str = unicodedata.normalize('NFKC', weight_val)
             weight = float(weight_str)
-            
+
             if weight > 0:
                 unit = st.session_state.get("unit_input", "kg")
                 weight_g = int(weight * 1000) if unit == "kg" else int(weight)
-                
+
                 client = get_gspread_client()
                 log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
-                
+
+                # モザンビーク時間 (UTC+2)
                 mozambique_tz = timezone(timedelta(hours=2))
                 timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
-                
+
                 new_row = [
-                    timestamp, 
-                    st.session_state.username, 
-                    st.session_state.target_month, 
-                    st.session_state.selected_line, 
+                    timestamp,
+                    st.session_state.username,
+                    st.session_state.target_month,
+                    st.session_state.selected_line,
                     f"{weight:.2f}",
-                    unit, 
+                    unit,
                     weight_g
                 ]
                 log_sheet.append_row(new_row)
-                
+
                 st.toast(f"Dados da linha {st.session_state.selected_line} registrados!")
-                
+
                 st.session_state.weight_input_val = ""
+                st.session_state.candidate_rows = []
+                st.session_state.searched_number = ""
                 st.session_state.form_counter += 1
                 st.session_state.step = 1
         except ValueError:
@@ -261,13 +302,13 @@ def process_submission():
 if st.session_state.step == 0:
     st.title("Sistema de Registro de Colheita")
     st.write("Antes de iniciar o trabalho, selecione o nome de usuário e o mês alvo.")
-    
-    month_options = ["Selecione o mês", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26", 
+
+    month_options = ["Selecione o mês", "May-26", "Jun-26", "Jul-26", "Aug-26", "Sep-26", "Oct-26",
                      "Nov-26", "Dec-26", "Jan-27", "Feb-27", "Mar-27", "Apr-27"]
-    
+
     user_input = st.text_input("Nome de usuário", placeholder="Insira seu nome")
     month_input = st.selectbox("Mês de registro", month_options, index=0)
-    
+
     if st.button("Fazer login e começar", use_container_width=True):
         if user_input and month_input != "Selecione o mês":
             st.session_state.username = user_input
@@ -276,14 +317,14 @@ if st.session_state.step == 0:
             st.rerun()
         else:
             st.warning("⚠️ Por favor, insira o nome de usuário e selecione o mês corretamente.")
-            
+
     components.html(
-        f"""
+        """
         <script>
-        setTimeout(function() {{
+        setTimeout(function() {
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {{ inputs[0].focus(); }}
-        }}, 400);
+            if (inputs.length > 0) { inputs[0].focus(); }
+        }, 400);
         </script>
         """, height=0
     )
@@ -310,57 +351,85 @@ if not df_log.empty and len(df_log.columns) >= 3:
 st.info(f"**Quantidade de sacos concluídos em {st.session_state.target_month}: {sack_count} sacos**")
 
 
+def already_registered(line_name):
+    """ その月に同じ Line Number が既に登録済みか """
+    if df_log.empty or len(df_log.columns) < 4:
+        return False
+    month_col = df_log.columns[2]
+    line_col = df_log.columns[3]
+    hit = df_log[
+        (df_log[month_col] == st.session_state.target_month)
+        & (df_log[line_col].astype(str).str.strip() == str(line_name).strip())
+    ]
+    return not hit.empty
+
+
 # ==========================================
 # Step 1: ライン番号検索画面
 # ==========================================
 if st.session_state.step == 1:
-    
+
     if st.button("Voltar à tela de login"):
         st.session_state.username = ""
         st.session_state.target_month = ""
+        st.session_state.candidate_rows = []
         st.session_state.step = 0
         st.rerun()
 
     def process_search():
-        search_val = st.session_state[f"search_{st.session_state.form_counter}"]
-        if search_val:
-            matched_rows = []
-            for index, row in df_master.iterrows():
-                line_str = str(row.get("Line Number", "")).strip()
-                # 始まりのL番号を抽出 (例: "L386", "L386 to L393" の最初の "386" にマッチ)
-                match = re.search(r'^L(\d+)', line_str)
-                if match and match.group(1) == search_val:
-                    matched_rows.append(row)
-            
-            # ヒットした件数によって処理を分岐
-            if len(matched_rows) == 1:
-                # 1件しか該当しなければそのままStep 2へ
-                st.session_state.selected_line = matched_rows[0].get("Line Number", "")
-                st.session_state.matched_row = matched_rows[0]
-                st.session_state.step = 2
-            elif len(matched_rows) > 1:
-                # 複数ヒットした場合（同じ番号で始まるセルが2つ以上ある場合）はStep 1.5へ
-                st.session_state.matched_rows = matched_rows
-                st.session_state.step = 1.5
-            else:
-                st.warning("Número da linha correspondente não encontrado.")
+        raw = st.session_state.get(f"search_{st.session_state.form_counter}", "")
+        search_val = unicodedata.normalize('NFKC', str(raw)).strip()
+        st.session_state.search_error = ""
+
+        if not search_val:
+            return
+
+        if not search_val.isdigit():
+            st.session_state.search_error = "Insira apenas números."
+            return
+
+        target_num = int(search_val)
+
+        matched_rows = []
+        for _, row in df_master.iterrows():
+            first_num = get_first_number(row.get("Line Number", ""))
+            if first_num is not None and first_num == target_num:
+                matched_rows.append(row)
+
+        if len(matched_rows) == 1:
+            st.session_state.selected_line = matched_rows[0].get("Line Number", "")
+            st.session_state.matched_row = matched_rows[0]
+            st.session_state.candidate_rows = []
+            st.session_state.step = 2
+        elif len(matched_rows) > 1:
+            # 候補が複数 → 必ず選択させる
+            st.session_state.candidate_rows = matched_rows
+            st.session_state.searched_number = search_val
+            st.session_state.selected_line = None
+            st.session_state.matched_row = None
+            st.session_state.step = 15
+        else:
+            st.session_state.search_error = "Número da linha correspondente não encontrado."
+
+    if st.session_state.search_error:
+        st.warning(f"⚠️ {st.session_state.search_error}")
+        st.session_state.search_error = ""
 
     st.text_input(
-        "Insira o primeiro número da linha (Enter para avançar)", 
+        "Insira o primeiro número da linha (Enter para avançar)",
         placeholder="Ex: 1",
         key=f"search_{st.session_state.form_counter}",
         on_change=process_search
     )
-    
+
     components.html(
         f"""
         <script>
         setTimeout(function() {{
             const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {{ 
+            if (inputs.length > 0) {{
                 let targetInput = inputs[inputs.length - 1];
                 targetInput.focus();
-                // スマホで数字キーボード(整数)を表示する設定
                 targetInput.setAttribute('inputmode', 'numeric');
                 targetInput.setAttribute('pattern', '[0-9]*');
             }}
@@ -372,109 +441,55 @@ if st.session_state.step == 1:
 
 
 # ==========================================
-# Step 1.5: 同じ開始番号が複数ある場合の選択画面
+# Step 15: 候補が複数ある場合の選択画面（必須）
 # ==========================================
-elif st.session_state.step == 1.5:
-    st.warning("⚠️ Foram encontradas várias opções. Por favor, selecione a linha correta:")
-    
-    # 見つかったすべての候補をラジオボタンで表示
-    options = [str(row.get("Line Number", "")) for row in st.session_state.matched_rows]
-    selected_option = st.radio("Selecione a Linha:", options, index=0)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Confirmar", use_container_width=True):
-            # ユーザーが確定した行を特定してStep 2へ進む
-            for row in st.session_state.matched_rows:
-                if str(row.get("Line Number", "")) == selected_option:
-                    st.session_state.selected_line = selected_option
-                    st.session_state.matched_row = row
-                    break
+elif st.session_state.step == 15:
+
+    st.warning(
+        f"⚠️ Existem **{len(st.session_state.candidate_rows)} registros** que começam com "
+        f"**{st.session_state.searched_number}**. Selecione qual deseja usar."
+    )
+
+    st.markdown('<div class="cand-zone"></div>', unsafe_allow_html=True)
+
+    for i, row in enumerate(st.session_state.candidate_rows):
+        line_name = str(row.get("Line Number", "")).strip()
+        kind = describe_row(row)
+        mark = " ✅ já registrado" if already_registered(line_name) else ""
+
+        label = (
+            f"{line_name}\n"
+            f"{kind} ・ Saco: {row.get('Sack Number', '-')} ・ "
+            f"Var.: {row.get('Variety', '-')} ・ "
+            f"Plantas: {row.get('Total no.of plant', '-')}{mark}"
+        )
+
+        if st.button(label, key=f"cand_{i}", use_container_width=True):
+            st.session_state.selected_line = line_name
+            st.session_state.matched_row = row
+            st.session_state.candidate_rows = []
             st.session_state.step = 2
             st.rerun()
-            
-    with col2:
-        if st.button("Cancelar", use_container_width=True):
-            # キャンセルした場合は入力をリセットして元の検索画面に戻る
-            st.session_state.form_counter += 1
-            st.session_state.step = 1
-            st.rerun()
+
+    st.divider()
+    if st.button("↩ Voltar (buscar outro número)", key="cand_cancel", use_container_width=True):
+        st.session_state.candidate_rows = []
+        st.session_state.searched_number = ""
+        st.session_state.form_counter += 1
+        st.session_state.step = 1
+        st.rerun()
 
 
 # ==========================================
 # Step 2: 重量入力＆送信画面
 # ==========================================
 elif st.session_state.step == 2:
-    
+
     line_name = st.session_state.selected_line
     st.success(f"Linha selecionada: **{line_name}**")
-    
+
     st.radio("Selecione a unidade", ["kg", "g"], index=0, horizontal=True, key="unit_input")
-    
+
     st.text_input(
-        "Insira o peso (Enter para confirmar e enviar)", 
-        value="",
+        "Insira o peso (Enter para confirmar e enviar)",
         placeholder="Ex: 1.5",
-        key="weight_input_val",
-        on_change=process_submission
-    )
-
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        if st.button("Concluir", use_container_width=True):
-            process_submission()
-            if st.session_state.step == 1: 
-                st.rerun()
-                
-    with col2:
-        if st.button("Cancelar", use_container_width=True):
-            st.session_state.weight_input_val = ""
-            st.session_state.form_counter += 1
-            st.session_state.step = 1
-            st.rerun()
-
-    st.divider()
-
-    st.write("▼ Detalhes da Linha")
-    row_data = st.session_state.matched_row
-    cols = st.columns(4)
-    cols[0].metric("ID da Mãe", row_data.get("Mother Id", "-"))
-    cols[1].metric("Variedade", row_data.get("Variety", "-"))
-    cols[2].metric("Nº do Saco", row_data.get("Sack Number", "-"))
-    cols[3].metric("Total de Plantas", row_data.get("Total no.of plant", "-"))
-
-    components.html(
-        f"""
-        <script>
-        setTimeout(function() {{
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
-            if (inputs.length > 0) {{ 
-                let targetInput = inputs[inputs.length - 1];
-                targetInput.focus();
-                // スマホで小数点付き数字キーボードを表示する設定
-                targetInput.setAttribute('inputmode', 'decimal');
-            }}
-        }}, 400);
-        </script>
-        <!-- timestamp: {time.time()} -->
-        """, height=0
-    )
-
-
-st.divider()
-
-# --- 共通フッター：履歴表示 ---
-if st.session_state.step in [1, 1.5, 2]:
-    st.subheader(f"Histórico de entradas de {st.session_state.target_month}")
-    if not df_log.empty and len(df_log.columns) >= 3:
-        target_col = df_log.columns[2]
-        df_filtered = df_log[df_log[target_col] == st.session_state.target_month]
-        
-        if not df_filtered.empty:
-            df_display = df_filtered.tail(10)[::-1].reset_index(drop=True)
-            st.dataframe(df_display, use_container_width=True)
-        else:
-             st.info(f"Ainda não há histórico para {st.session_state.target_month}.")
-    else:
-        st.info("Ainda não há histórico de entradas.")
