@@ -322,12 +322,17 @@ if st.session_state.step == 1:
         st.rerun()
 
     def process_search():
-        search_val = st.session_state[f"search_{st.session_state.form_counter}"]
+        search_val = st.session_state.get(f"search_{st.session_state.form_counter}", "").strip()
         if search_val:
             matched_rows = []
             for index, row in df_master.iterrows():
                 line_str = str(row.get("Line Number", ""))
-                match = re.search(r'L(\d+)', line_str)
+                # 行の最初の数字を正確に抽出する（例: "L386"や"L386 to L393"の最初の数字は386）
+                match = re.search(r'L(\d+)', line_str, re.IGNORECASE)
+                if not match:
+                    # 'L'がつかない場合のフォールバック
+                    match = re.search(r'^(\d+)', line_str.strip())
+                
                 if match and match.group(1) == search_val:
                     matched_rows.append(row)
             
@@ -337,11 +342,14 @@ if st.session_state.step == 1:
                 st.session_state.duplicate_candidates = []
                 st.session_state.step = 2
             elif len(matched_rows) > 1:
-                # 複数ヒット（重複）した場合
+                # 複数ヒット（重複）した場合、必ず選択画面（Step 1.5）へ
                 st.session_state.duplicate_candidates = matched_rows
-                st.session_state.step = 1.5  # 重複選択ステップへ
+                st.session_state.step = 1.5
             else:
                 st.warning("Número da linha correspondente não encontrado.")
+            
+            # 状態変化を確実に画面に反映させるため再実行
+            st.rerun()
 
     st.text_input(
         "Insira o primeiro número da linha (Enter para avançar)", 
@@ -369,13 +377,12 @@ if st.session_state.step == 1:
 
 
 # ==========================================
-# Step 1.5: 重複マスター選択画面
+# Step 1.5: 重複マスター選択画面（強制選択）
 # ==========================================
 elif st.session_state.step == 1.5:
-    st.warning("⚠️ Foram encontrados múltiplos registros com o mesmo número inicial. Por favor, escolha a linha correta:")
+    st.warning("⚠️ Foram encontrados múltiplos registros com o mesmo número inicial. Por favor, escolha a linha correta para continuar:")
 
     candidates = st.session_state.duplicate_candidates
-    # 選択肢用のラベルリストを作成
     options = []
     for row in candidates:
         line_num = row.get("Line Number", "")
@@ -399,6 +406,7 @@ elif st.session_state.step == 1.5:
     with col_btn2:
         if st.button("Voltar à busca", use_container_width=True):
             st.session_state.duplicate_candidates = []
+            st.session_state.form_counter += 1  # 検索ボックスを新しくするためのカウンタ更新
             st.session_state.step = 1
             st.rerun()
 
