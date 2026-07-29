@@ -143,25 +143,21 @@ st.markdown("""
             text-align: center !important;
             font-size: 0.8rem !important;
             line-height: 1.2 !important;
-            font-weight: bold !important; /* 文字を少し太くして見やすく */
+            font-weight: bold !important;
         }
     }
     
-    /* ▼▼▼ ここから変更：枠線スタイル ▼▼▼ */
-    /* 完了ボタン（緑の枠） */
     div[data-testid="column"]:nth-of-type(1) button {
-        background-color: transparent !important;  /* 背景を透明に */
-        color: #28a745 !important;                 /* 文字色を緑に */
-        border: 2px solid #28a745 !important;      /* 2pxの緑の枠線を設定 */
+        background-color: transparent !important; 
+        color: #28a745 !important;               
+        border: 2px solid #28a745 !important;     
     }
     
-    /* キャンセルボタン（赤の枠） */
     div[data-testid="column"]:nth-of-type(2) button {
-        background-color: transparent !important;  /* 背景を透明に */
-        color: #dc3545 !important;                 /* 文字色を赤に */
-        border: 2px solid #dc3545 !important;      /* 2pxの赤の枠線を設定 */
+        background-color: transparent !important; 
+        color: #dc3545 !important;               
+        border: 2px solid #dc3545 !important;     
     }
-    /* ▲▲▲ ここまで ▲▲▲ */
     </style>
 """, unsafe_allow_html=True)
 
@@ -215,6 +211,8 @@ if "matched_row" not in st.session_state:
     st.session_state.matched_row = None
 if "weight_input_val" not in st.session_state:
     st.session_state.weight_input_val = ""
+if "duplicate_candidates" not in st.session_state:
+    st.session_state.duplicate_candidates = []
 
 
 # ==========================================
@@ -234,7 +232,6 @@ def process_submission():
                 client = get_gspread_client()
                 log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
                 
-                # モザンビーク時間 (UTC+2) を設定してタイムスタンプを取得
                 mozambique_tz = timezone(timedelta(hours=2))
                 timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
                 
@@ -327,18 +324,22 @@ if st.session_state.step == 1:
     def process_search():
         search_val = st.session_state[f"search_{st.session_state.form_counter}"]
         if search_val:
-            matched_row = None
+            matched_rows = []
             for index, row in df_master.iterrows():
                 line_str = str(row.get("Line Number", ""))
                 match = re.search(r'L(\d+)', line_str)
                 if match and match.group(1) == search_val:
-                    matched_row = row
-                    break
+                    matched_rows.append(row)
             
-            if matched_row is not None:
-                st.session_state.selected_line = matched_row.get("Line Number", "")
-                st.session_state.matched_row = matched_row
+            if len(matched_rows) == 1:
+                st.session_state.selected_line = matched_rows[0].get("Line Number", "")
+                st.session_state.matched_row = matched_rows[0]
+                st.session_state.duplicate_candidates = []
                 st.session_state.step = 2
+            elif len(matched_rows) > 1:
+                # 複数ヒット（重複）した場合
+                st.session_state.duplicate_candidates = matched_rows
+                st.session_state.step = 1.5  # 重複選択ステップへ
             else:
                 st.warning("Número da linha correspondente não encontrado.")
 
@@ -357,7 +358,6 @@ if st.session_state.step == 1:
             if (inputs.length > 0) {{ 
                 let targetInput = inputs[inputs.length - 1];
                 targetInput.focus();
-                // スマホで数字キーボード(整数)を表示する設定
                 targetInput.setAttribute('inputmode', 'numeric');
                 targetInput.setAttribute('pattern', '[0-9]*');
             }}
@@ -366,6 +366,41 @@ if st.session_state.step == 1:
         <!-- timestamp: {time.time()} -->
         """, height=0
     )
+
+
+# ==========================================
+# Step 1.5: 重複マスター選択画面
+# ==========================================
+elif st.session_state.step == 1.5:
+    st.warning("⚠️ Foram encontrados múltiplos registros com o mesmo número inicial. Por favor, escolha a linha correta:")
+
+    candidates = st.session_state.duplicate_candidates
+    # 選択肢用のラベルリストを作成
+    options = []
+    for row in candidates:
+        line_num = row.get("Line Number", "")
+        variety = row.get("Variety", "-")
+        mother_id = row.get("Mother Id", "-")
+        options.append(f"Linha: {line_num} (Variedade: {variety}, Mãe: {mother_id})")
+
+    selected_option = st.radio("Selecione o registro correto:", options, key="duplicate_radio")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        if st.button("Confirmar seleção", use_container_width=True):
+            selected_idx = options.index(selected_option)
+            chosen_row = candidates[selected_idx]
+            st.session_state.selected_line = chosen_row.get("Line Number", "")
+            st.session_state.matched_row = chosen_row
+            st.session_state.duplicate_candidates = []
+            st.session_state.step = 2
+            st.rerun()
+
+    with col_btn2:
+        if st.button("Voltar à busca", use_container_width=True):
+            st.session_state.duplicate_candidates = []
+            st.session_state.step = 1
+            st.rerun()
 
 
 # ==========================================
@@ -419,7 +454,6 @@ elif st.session_state.step == 2:
             if (inputs.length > 0) {{ 
                 let targetInput = inputs[inputs.length - 1];
                 targetInput.focus();
-                // スマホで小数点付き数字キーボードを表示する設定
                 targetInput.setAttribute('inputmode', 'decimal');
             }}
         }}, 400);
@@ -432,7 +466,7 @@ elif st.session_state.step == 2:
 st.divider()
 
 # --- 共通フッター：履歴表示 ---
-if st.session_state.step in [1, 2]:
+if st.session_state.step in [1, 1.5, 2]:
     st.subheader(f"Histórico de entradas de {st.session_state.target_month}")
     if not df_log.empty and len(df_log.columns) >= 3:
         target_col = df_log.columns[2]
