@@ -27,7 +27,7 @@ WEIGHT_MIN_G = 5       # 5g未満は確認を挟む
 # ==========================================
 # 2. デザイン（計量器コンセプト）
 # ==========================================
-st.markdown("""
+st.html("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -50,28 +50,24 @@ st.markdown("""
   --font-ui:    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono:  'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-
 /* ---- Streamlit標準UIを隠す ---- */
 header[data-testid="stHeader"] { display: none !important; }
 div[data-testid="stToolbar"]   { display: none !important; }
 div[data-testid="stDecoration"]{ display: none !important; }
 footer                         { display: none !important; }
 #MainMenu                      { display: none !important; }
-
 /* ---- 全体 ---- */
 .stApp {
   background: var(--bg) !important;
   overflow-x: hidden !important;
 }
 html, body, [class*="css"] { font-family: var(--font-ui) !important; }
-
 div[data-testid="stAppViewContainer"] > .main .block-container,
 div[data-testid="stMainBlockContainer"] {
   padding-top: 14px !important;
   padding-bottom: 40px !important;
   max-width: 560px !important;
 }
-
 /* ================= トップバー ================= */
 .topbar {
   display: flex;
@@ -124,7 +120,6 @@ div[data-testid="stMainBlockContainer"] {
   color: var(--ink-soft);
   margin-top: 4px;
 }
-
 /* ================= セクション見出し ================= */
 .eyebrow {
   font-family: var(--font-mono);
@@ -135,7 +130,6 @@ div[data-testid="stMainBlockContainer"] {
   color: var(--ink-soft);
   margin: 4px 0 8px;
 }
-
 /* ================= 計量パネル（署名要素） ================= */
 .readout {
   background: var(--panel);
@@ -165,7 +159,6 @@ div[data-testid="stMainBlockContainer"] {
   color: #8CA697;
   margin-top: 6px;
 }
-
 /* 計量パネル内の重量入力欄を「表示窓」にする */
 .st-key-weightpanel div[data-testid="stTextInput"] input {
   background: var(--panel) !important;
@@ -193,7 +186,6 @@ div[data-testid="stMainBlockContainer"] {
   border-radius: 0 0 16px 16px !important;
 }
 .st-key-weightpanel div[data-testid="stTextInput"] label { display: none !important; }
-
 /* ================= 検索入力（大きく） ================= */
 .st-key-searchpanel div[data-testid="stTextInput"] input {
   background: var(--card) !important;
@@ -216,7 +208,6 @@ div[data-testid="stMainBlockContainer"] {
   font-weight: 400 !important;
 }
 .st-key-searchpanel div[data-testid="stTextInput"] label { display: none !important; }
-
 /* ログイン画面の入力欄 */
 .st-key-loginpanel div[data-testid="stTextInput"] input,
 .st-key-loginpanel div[data-baseweb="select"] > div {
@@ -238,7 +229,6 @@ div[data-testid="stMainBlockContainer"] {
   text-transform: uppercase !important;
   color: var(--ink-soft) !important;
 }
-
 /* ================= 単位トグル（セグメント） ================= */
 div[data-testid="stRadio"] > label { display: none !important; }
 div[data-testid="stRadio"] div[role="radiogroup"] {
@@ -277,7 +267,6 @@ div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) {
 div[data-testid="stRadio"] div[role="radiogroup"] label:has(input:checked) p {
   color: #FFFFFF !important;
 }
-
 /* ================= ボタン共通 ================= */
 div[data-testid="stButton"] > button {
   border-radius: 12px !important;
@@ -296,7 +285,6 @@ div[data-testid="stButton"] > button:focus-visible {
   outline: 3px solid var(--green) !important;
   outline-offset: 2px !important;
 }
-
 /* 主要アクション（緑・塗り） */
 .st-key-btn_confirm button, .st-key-btn_login button, .st-key-btn_force button {
   background: var(--green) !important;
@@ -324,7 +312,6 @@ div[data-testid="stButton"] > button:focus-visible {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-
 /* ================= 候補カード（袋タグ） ================= */
 .st-key-candzone div[data-testid="stButton"] > button {
   min-height: 84px !important;
@@ -347,7 +334,6 @@ div[data-testid="stButton"] > button:focus-visible {
   white-space: pre-line !important;
   margin: 0 !important;
 }
-
 /* ================= バナー ================= */
 .banner {
   border-radius: 12px;
@@ -361,7 +347,6 @@ div[data-testid="stButton"] > button:focus-visible {
 .banner.warn  { background: var(--amber-soft); border-color: #E8CE9A; color: var(--amber); }
 .banner.error { background: var(--red-soft);   border-color: #E9BDB9; color: var(--red); }
 .banner.info  { background: var(--green-soft); border-color: #BDDCC9; color: var(--green-dark); }
-
 /* ================= 明細（メタ情報） ================= */
 .meta {
   display: grid;
@@ -388,7 +373,6 @@ div[data-testid="stButton"] > button:focus-visible {
   margin-top: 3px;
   word-break: break-word;
 }
-
 /* ================= 履歴 ================= */
 .log { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card); }
 .log .row {
@@ -427,7 +411,6 @@ div[data-testid="stButton"] > button:focus-visible {
   font-size: 13px;
   background: var(--card);
 }
-
 /* ログイン画面のヘッダー */
 .login-head { padding: 22px 0 18px; }
 .login-head .mark {
@@ -447,14 +430,12 @@ div[data-testid="stButton"] > button:focus-visible {
   letter-spacing: -.02em;
 }
 .login-head p { font-size: 14px; color: var(--ink-soft); margin: 0; line-height: 1.55; }
-
 hr, div[data-testid="stDivider"] { border-color: var(--line) !important; }
-
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
 </style>
-""", unsafe_allow_html=True)
+""")
 
 
 # ==========================================
@@ -622,9 +603,8 @@ def focus_last_input(mode="numeric"):
 
 def pop_error():
     if st.session_state.search_error:
-        st.markdown(
-            f'<div class="banner error">{esc(st.session_state.search_error)}</div>',
-            unsafe_allow_html=True
+        st.html(
+            f'<div class="banner error">{esc(st.session_state.search_error)}</div>'
         )
         st.session_state.search_error = ""
 
@@ -633,13 +613,13 @@ def pop_error():
 # Step 0: ログイン
 # ==========================================
 if st.session_state.step == 0:
-    st.markdown("""
+    st.html("""
     <div class="login-head">
       <div class="mark">Registro de colheita</div>
       <h1>Pesagem por linha</h1>
       <p>Identifique-se e escolha o mês antes de começar.</p>
     </div>
-    """, unsafe_allow_html=True)
+    """)
 
     with st.container(key="loginpanel"):
         pop_error()
@@ -671,9 +651,8 @@ try:
     df_master = load_master_data()
     df_log = load_log_data()
 except Exception as e:
-    st.markdown(
-        f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>',
-        unsafe_allow_html=True
+    st.html(
+        f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>'
     )
     st.stop()
 
@@ -696,7 +675,7 @@ def already_registered(line_name):
 
 
 # ---- トップバー ----
-st.markdown(f"""
+st.html(f"""
 <div class="topbar">
   <div class="who">
     <div class="name">{esc(st.session_state.username)}</div>
@@ -707,7 +686,7 @@ st.markdown(f"""
     <div class="lbl">sacos</div>
   </div>
 </div>
-""", unsafe_allow_html=True)
+""")
 
 
 # ==========================================
@@ -744,7 +723,7 @@ if st.session_state.step == 1:
             st.session_state.search_error = f"Linha {val} não existe no cadastro."
 
     pop_error()
-    st.markdown('<div class="eyebrow">Número inicial da linha</div>', unsafe_allow_html=True)
+    st.html('<div class="eyebrow">Número inicial da linha</div>')
 
     with st.container(key="searchpanel"):
         st.text_input(
@@ -755,9 +734,8 @@ if st.session_state.step == 1:
             label_visibility="collapsed"
         )
 
-    st.markdown(
-        '<div class="banner info">Digite o número e toque em Enter para avançar.</div>',
-        unsafe_allow_html=True
+    st.html(
+        '<div class="banner info">Digite o número e toque em Enter para avançar.</div>'
     )
 
     with st.container(key="btn_logout"):
@@ -776,11 +754,10 @@ if st.session_state.step == 1:
 # ==========================================
 elif st.session_state.step == 15:
 
-    st.markdown(
+    st.html(
         f'<div class="banner warn">O número <b>{esc(st.session_state.searched_number)}</b> '
         f'aparece em {len(st.session_state.candidate_rows)} registros. '
-        f'Escolha em qual deles você vai lançar o peso.</div>',
-        unsafe_allow_html=True
+        f'Escolha em qual deles você vai lançar o peso.</div>'
     )
 
     with st.container(key="candzone"):
@@ -816,18 +793,17 @@ elif st.session_state.step == 2:
     # --- 異常値の確認待ち ---
     if st.session_state.pending_weight is not None:
         w, u = st.session_state.pending_weight
-        st.markdown(
+        st.html(
             f'<div class="banner warn">O valor <b>{w:.2f} {u}</b> está fora da faixa '
-            f'esperada. Confirme se está correto antes de registrar.</div>',
-            unsafe_allow_html=True
+            f'esperada. Confirme se está correto antes de registrar.</div>'
         )
-        st.markdown(f"""
+        st.html(f"""
         <div class="readout">
           <div class="tag">Confirmar registro</div>
           <div class="line-code">{esc(line_name)}</div>
           <div class="sub">{w:.2f} {u}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
 
         c1, c2 = st.columns(2)
         with c1:
@@ -848,21 +824,20 @@ elif st.session_state.step == 2:
     pop_error()
 
     if already_registered(line_name):
-        st.markdown(
+        st.html(
             '<div class="banner warn">Esta linha já tem um registro neste mês. '
-            'Um novo lançamento será somado ao histórico.</div>',
-            unsafe_allow_html=True
+            'Um novo lançamento será somado ao histórico.</div>'
         )
 
     # --- 計量パネル ---
     with st.container(key="weightpanel"):
-        st.markdown(f"""
+        st.html(f"""
         <div class="readout">
           <div class="tag">Pesando</div>
           <div class="line-code">{esc(line_name)}</div>
           <div class="sub">{esc(describe_row(row_data))} &nbsp;·&nbsp; Saco {esc(row_data.get('Sack Number', '-'))}</div>
         </div>
-        """, unsafe_allow_html=True)
+        """)
 
         st.text_input(
             "Peso",
@@ -888,14 +863,14 @@ elif st.session_state.step == 2:
                 st.rerun()
 
     # --- 明細 ---
-    st.markdown(f"""
+    st.html(f"""
     <div class="meta">
       <div class="cell"><div class="k">ID da mãe</div><div class="v">{esc(row_data.get('Mother Id', '-'))}</div></div>
       <div class="cell"><div class="k">Variedade</div><div class="v">{esc(row_data.get('Variety', '-'))}</div></div>
       <div class="cell"><div class="k">Saco</div><div class="v">{esc(row_data.get('Sack Number', '-'))}</div></div>
       <div class="cell"><div class="k">Plantas</div><div class="v">{esc(row_data.get('Total no.of plant', '-'))}</div></div>
     </div>
-    """, unsafe_allow_html=True)
+    """)
 
     focus_last_input("decimal")
 
@@ -904,8 +879,7 @@ elif st.session_state.step == 2:
 # 履歴
 # ==========================================
 if st.session_state.step in (1, 2, 15):
-    st.markdown('<div class="eyebrow" style="margin-top:26px">Últimos registros</div>',
-                unsafe_allow_html=True)
+    st.html('<div class="eyebrow" style="margin-top:26px">Últimos registros</div>')
 
     if not df_month.empty and len(df_log.columns) >= 6:
         c_time, c_line, c_val, c_unit = (df_log.columns[0], df_log.columns[3],
@@ -920,9 +894,8 @@ if st.session_state.step in (1, 2, 15):
                 f'<div class="w">{esc(r.get(c_val, "-"))} {esc(r.get(c_unit, ""))}</div>'
                 '</div>'
             )
-        st.markdown(f'<div class="log">{"".join(rows)}</div>', unsafe_allow_html=True)
+        st.html(f'<div class="log">{"".join(rows)}</div>')
     else:
-        st.markdown(
-            f'<div class="empty">Nenhum registro em {esc(st.session_state.target_month)} ainda.</div>',
-            unsafe_allow_html=True
+        st.html(
+            f'<div class="empty">Nenhum registro em {esc(st.session_state.target_month)} ainda.</div>'
         )
