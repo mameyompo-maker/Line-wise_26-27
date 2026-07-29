@@ -32,14 +32,11 @@ THEME_COLOR = "#28a745"
 
 def _patch_streamlit_pwa():
     """
-    ブラウザは「最初に読み込んだHTML」にあるmanifest/アイコンのタグしか
-    見てくれず、後からJavaScriptでタグを差し替えても効かない。
-    そのため、Streamlit本体が配布している静的ファイル
-    (index.html / manifest.json / favicon.png) そのものを直接書き換える。
-
-    1回書き換えれば以降のアクセスには効き続けるので、marker文字列で
-    二重パッチを防いでいる。失敗してもアプリ本体は止めない。
+    Streamlit本体が配布している静的ファイル
+    (index.html / manifest.json / favicon.png) を直接書き換えてPWA化する。
+    各ステップの結果を辞書で返し、?debug=1 で確認できるようにする。
     """
+    log = {}
     try:
         st_static_dir = os.path.join(os.path.dirname(st.__file__), "static")
         index_path = os.path.join(st_static_dir, "index.html")
@@ -47,14 +44,28 @@ def _patch_streamlit_pwa():
         favicon_path = os.path.join(st_static_dir, "favicon.png")
         apple_icon_path = os.path.join(st_static_dir, "apple-touch-icon.png")
 
-        if not os.path.isdir(st_static_dir) or not os.path.exists(index_path):
-            return
+        log["streamlit_version"] = st.__version__
+        log["static_dir"] = st_static_dir
+        log["static_dir_exists"] = os.path.isdir(st_static_dir)
+        log["index_exists"] = os.path.exists(index_path)
+        log["writable"] = os.access(st_static_dir, os.W_OK)
+
+        if not log["static_dir_exists"] or not log["index_exists"]:
+            log["result"] = "NG: Streamlitのstaticフォルダが見つからない"
+            return log
 
         with open(index_path, "r", encoding="utf-8") as f:
             html = f.read()
 
+        log["index_size"] = len(html)
+        log["has_title_tag"] = "<title>Streamlit</title>" in html
+        log["has_shortcut_icon"] = '<link rel="shortcut icon" href="/favicon.png" />' in html
+        log["has_manifest_link"] = 'rel="manifest"' in html
+        log["head_snippet"] = html[:800]
+
         if "<!-- pwa-patched -->" in html:
-            return  # 既にパッチ済み
+            log["result"] = "OK: 既にパッチ適用済み"
+            return log
 
         # 1. manifest.json を自分のアプリ用に上書き
         pwa_manifest = {
@@ -72,43 +83,63 @@ def _patch_streamlit_pwa():
         }
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(pwa_manifest, f, ensure_ascii=False)
+        log["manifest_written"] = True
 
         # 2. favicon.png / apple-touch-icon.png を自前のアイコンで上書き
         repo_dir = os.path.dirname(os.path.abspath(__file__))
         source_icon = os.path.join(repo_dir, "static", "icon-512.png")
         if not os.path.exists(source_icon):
             source_icon = os.path.join(repo_dir, "icon.png")
-        if os.path.exists(source_icon):
+        log["source_icon"] = source_icon
+        log["source_icon_exists"] = os.path.exists(source_icon)
+        if log["source_icon_exists"]:
             shutil.copyfile(source_icon, favicon_path)
             shutil.copyfile(source_icon, apple_icon_path)
+            log["icons_copied"] = True
 
         # 3. index.html にタイトルとメタタグを追記
         html = html.replace("<title>Streamlit</title>", f"<title>{APP_NAME}</title>")
         injected_tags = (
+            f'<link rel="manifest" href="/manifest.json">'
             f'<meta name="theme-color" content="{THEME_COLOR}">'
             f'<meta name="apple-mobile-web-app-capable" content="yes">'
+            f'<meta name="mobile-web-app-capable" content="yes">'
             f'<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
             f'<meta name="apple-mobile-web-app-title" content="{APP_NAME}">'
             f'<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
             f'<!-- pwa-patched -->'
         )
-        if '<link rel="shortcut icon" href="/favicon.png" />' in html:
-            html = html.replace(
-                '<link rel="shortcut icon" href="/favicon.png" />',
-                '<link rel="shortcut icon" href="/favicon.png" />' + injected_tags
-            )
+        # 既存のmanifestリンクがあれば先に除去（重複防止）
+        html = re.sub(r'<link[^>]*rel="manifest"[^>]*>', '', html)
+
+        if "</head>" in html:
+            html = html.replace("</head>", injected_tags + "</head>", 1)
+            log["injection_point"] = "</head>"
         else:
-            # バージョン差でタグの書式が違う場合の保険：</head>の直前に挿入
-            html = html.replace("</head>", injected_tags + "</head>")
+            log["result"] = "NG: </head>が見つからない"
+            return log
 
         with open(index_path, "w", encoding="utf-8") as f:
             f.write(html)
+        log["index_written"] = True
+        log["result"] = "OK: パッチを新規適用した"
 
-    except Exception:
-        pass  # PWA化に失敗してもアプリ本体には影響させない
+    except Exception as e:
+        log["result"] = f"NG: 例外発生 → {type(e).__name__}: {e}"
+    return log
 
 
-_patch_streamlit_pwa()
+PWA_LOG = _patch_streamlit_pwa()
+
+# ?debug=1 を付けてアクセスすると診断結果を表示
+try:
+    _qp = dict(st.query_params)
+except Exception:
+    _qp = st.experimental_get_query_params()
+if _qp.get("debug"):
+    st.warning("🔧 PWA診断モード")
+    st.json(PWA_LOG)
+    st.stop()
 
 
 # ==========================================
