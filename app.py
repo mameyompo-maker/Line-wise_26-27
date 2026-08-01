@@ -514,6 +514,7 @@ def load_master_data():
     return pd.DataFrame()
 
 
+@st.cache_data(ttl=5)
 def load_log_data():
     client = get_gspread_client()
     sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
@@ -589,6 +590,7 @@ def write_log(weight, unit):
         unit,
         weight_g
     ])
+    load_log_data.clear()
 
 
 def update_log_row(sheet_row, weight, unit):
@@ -597,6 +599,7 @@ def update_log_row(sheet_row, weight, unit):
     client = get_gspread_client()
     log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
     log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
+    load_log_data.clear()
 
 
 def delete_log_row(sheet_row):
@@ -604,6 +607,7 @@ def delete_log_row(sheet_row):
     client = get_gspread_client()
     log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
     log_sheet.delete_rows(sheet_row)
+    load_log_data.clear()
 
 
 def process_edit_save():
