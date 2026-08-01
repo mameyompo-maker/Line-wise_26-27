@@ -216,6 +216,17 @@ div[data-testid="stMainBlockContainer"] {
   font-weight: 400 !important;
 }
 .st-key-searchpanel div[data-testid="stTextInput"] label { display: none !important; }
+/* 「Press Enter to apply」の案内文が大きな入力欄と被らないよう、下・左に離す */
+.st-key-searchpanel div[data-testid="InputInstructions"],
+.st-key-weightpanel div[data-testid="InputInstructions"],
+.st-key-loginpanel div[data-testid="InputInstructions"] {
+  position: static !important;
+  display: flex !important;
+  justify-content: flex-start !important;
+  text-align: left !important;
+  margin-top: 6px !important;
+  padding-left: 2px !important;
+}
 /* ログイン画面の入力欄 */
 .st-key-loginpanel div[data-testid="stTextInput"] input,
 .st-key-loginpanel div[data-baseweb="select"] > div {
