@@ -325,6 +325,27 @@ div[data-testid="stButton"] > button:focus-visible {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+/* 削除リンク（控えめ・赤） */
+.st-key-btn_delete div[data-testid="stButton"] > button {
+  background: transparent !important;
+  border: none !important;
+  color: var(--red) !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  min-height: 38px !important;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* 削除の確定（赤・塗り） */
+.st-key-btn_danger div[data-testid="stButton"] > button {
+  background: var(--red) !important;
+  border-color: var(--red) !important;
+  color: #FFFFFF !important;
+}
+.st-key-btn_danger div[data-testid="stButton"] > button:hover {
+  background: #7C1912 !important;
+  border-color: #7C1912 !important;
+}
 /* ================= 候補カード（袋タグ） ================= */
 .st-key-candzone div[data-testid="stButton"] > button {
   min-height: 84px !important;
@@ -520,6 +541,7 @@ _defaults = {
     "pending_weight": None,   # 異常値の確認待ち
     "edit_target": None,      # 履歴編集中のレコード
     "return_step": None,      # 編集後に戻るステップ
+    "confirm_delete": False,  # 削除確認待ち
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -575,6 +597,13 @@ def update_log_row(sheet_row, weight, unit):
     client = get_gspread_client()
     log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
     log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
+
+
+def delete_log_row(sheet_row):
+    """履歴の記録を完全に取り消す（該当行を削除）"""
+    client = get_gspread_client()
+    log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    log_sheet.delete_rows(sheet_row)
 
 
 def process_edit_save():
@@ -952,57 +981,92 @@ elif st.session_state.step == 3:
     target = st.session_state.edit_target
     pop_error()
 
-    st.html(
-        f'<div class="banner warn">Corrigindo o peso registrado para <b>{esc(target["line"])}</b>. '
-        f'Ajuste o valor e salve.</div>'
-    )
-
-    with st.container(key="weightpanel"):
+    if st.session_state.confirm_delete:
+        st.html(
+            f'<div class="banner error">Excluir definitivamente o registro de <b>{esc(target["line"])}</b> '
+            f'({esc(target["val"])} {esc(target["unit"])})? Esta ação não pode ser desfeita.</div>'
+        )
         st.html(f"""
         <div class="readout">
-          <div class="tag">Editando registro</div>
+          <div class="tag">Registro a excluir</div>
           <div class="line-code">{esc(target['line'])}</div>
           <div class="sub">Lançado em {esc(target['stamp'])}</div>
         </div>
         """)
 
-        edit_key = f"editweight_{st.session_state.form_counter}"
-        if edit_key not in st.session_state:
-            st.session_state[edit_key] = target["val"]
-        st.text_input(
-            "Novo peso",
-            key=edit_key,
-            label_visibility="collapsed"
+        d1, d2 = st.columns(2)
+        with d1:
+            with st.container(key="btn_danger"):
+                if st.button("Sim, excluir", use_container_width=True):
+                    delete_log_row(target["row"])
+                    st.toast(f"{target['line']} excluído")
+                    st.session_state.edit_target = None
+                    st.session_state.confirm_delete = False
+                    st.session_state.step = st.session_state.return_step or 1
+                    st.rerun()
+        with d2:
+            with st.container(key="btn_cancel"):
+                if st.button("Não, voltar", use_container_width=True):
+                    st.session_state.confirm_delete = False
+                    st.rerun()
+
+    else:
+        st.html(
+            f'<div class="banner warn">Corrigindo o peso registrado para <b>{esc(target["line"])}</b>. '
+            f'Ajuste o valor e salve.</div>'
         )
 
-    _unit_e = st.session_state.get("unit_edit", target["unit"])
-    with st.container(key="unitrow"):
-        u1, u2 = st.columns(2)
-        with u1:
-            with st.container(key=f"unit_kg_{'on' if _unit_e == 'kg' else 'off'}"):
-                if st.button("kg", use_container_width=True, key="pick_kg_edit"):
-                    st.session_state.unit_edit = "kg"
+        with st.container(key="weightpanel"):
+            st.html(f"""
+            <div class="readout">
+              <div class="tag">Editando registro</div>
+              <div class="line-code">{esc(target['line'])}</div>
+              <div class="sub">Lançado em {esc(target['stamp'])}</div>
+            </div>
+            """)
+
+            edit_key = f"editweight_{st.session_state.form_counter}"
+            if edit_key not in st.session_state:
+                st.session_state[edit_key] = target["val"]
+            st.text_input(
+                "Novo peso",
+                key=edit_key,
+                label_visibility="collapsed"
+            )
+
+        _unit_e = st.session_state.get("unit_edit", target["unit"])
+        with st.container(key="unitrow"):
+            u1, u2 = st.columns(2)
+            with u1:
+                with st.container(key=f"unit_kg_{'on' if _unit_e == 'kg' else 'off'}"):
+                    if st.button("kg", use_container_width=True, key="pick_kg_edit"):
+                        st.session_state.unit_edit = "kg"
+                        st.rerun()
+            with u2:
+                with st.container(key=f"unit_g_{'on' if _unit_e == 'g' else 'off'}"):
+                    if st.button("g", use_container_width=True, key="pick_g_edit"):
+                        st.session_state.unit_edit = "g"
+                        st.rerun()
+
+        c1, c2 = st.columns(2)
+        with c1:
+            with st.container(key="btn_confirm"):
+                if st.button("Salvar", use_container_width=True):
+                    process_edit_save()
                     st.rerun()
-        with u2:
-            with st.container(key=f"unit_g_{'on' if _unit_e == 'g' else 'off'}"):
-                if st.button("g", use_container_width=True, key="pick_g_edit"):
-                    st.session_state.unit_edit = "g"
+        with c2:
+            with st.container(key="btn_cancel"):
+                if st.button("Cancelar", use_container_width=True):
+                    st.session_state.edit_target = None
+                    st.session_state.step = st.session_state.return_step or 1
                     st.rerun()
 
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.container(key="btn_confirm"):
-            if st.button("Salvar", use_container_width=True):
-                process_edit_save()
-                st.rerun()
-    with c2:
-        with st.container(key="btn_cancel"):
-            if st.button("Cancelar", use_container_width=True):
-                st.session_state.edit_target = None
-                st.session_state.step = st.session_state.return_step or 1
+        with st.container(key="btn_delete"):
+            if st.button("Excluir este registro", use_container_width=True):
+                st.session_state.confirm_delete = True
                 st.rerun()
 
-    focus_last_input("decimal")
+        focus_last_input("decimal")
 
 
 # ==========================================
