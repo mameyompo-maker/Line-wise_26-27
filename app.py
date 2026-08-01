@@ -386,34 +386,28 @@ div[data-testid="stButton"] > button:focus-visible {
   margin-top: 3px;
   word-break: break-word;
 }
-/* ================= 履歴 ================= */
-.log { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--card); }
-.log .row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 13px;
-  border-bottom: 1px solid var(--line);
+/* ================= 履歴（タップで編集） ================= */
+.st-key-histzone div[data-testid="stButton"] > button {
+  min-height: 58px !important;
+  padding: 10px 14px !important;
+  margin-bottom: 6px !important;
+  text-align: left !important;
+  justify-content: flex-start !important;
+  border: 1.5px solid var(--line) !important;
+  background: var(--card) !important;
+  white-space: pre-line !important;
+  line-height: 1.4 !important;
 }
-.log .row:last-child { border-bottom: none; }
-.log .row .l {
-  font-family: var(--font-mono);
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.st-key-histzone div[data-testid="stButton"] > button:hover {
+  border-color: var(--green) !important;
+  background: var(--green-soft) !important;
 }
-.log .row .t { font-size: 11px; color: var(--ink-soft); margin-top: 2px; }
-.log .row .w {
-  font-family: var(--font-mono);
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--green);
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
+.st-key-histzone div[data-testid="stButton"] > button p {
+  text-align: left !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  white-space: pre-line !important;
+  margin: 0 !important;
 }
 .empty {
   border: 1px dashed var(--line);
@@ -524,6 +518,8 @@ _defaults = {
     "searched_number": "",
     "search_error": "",
     "pending_weight": None,   # 異常値の確認待ち
+    "edit_target": None,      # 履歴編集中のレコード
+    "return_step": None,      # 編集後に戻るステップ
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -571,6 +567,38 @@ def write_log(weight, unit):
         unit,
         weight_g
     ])
+
+
+def update_log_row(sheet_row, weight, unit):
+    """既存の記録（履歴）を修正する"""
+    weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
+    client = get_gspread_client()
+    log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
+
+
+def process_edit_save():
+    """履歴編集フォームの保存処理"""
+    target = st.session_state.edit_target
+    key = f"editweight_{st.session_state.form_counter}"
+    raw = st.session_state.get(key, "")
+    if not raw:
+        st.session_state.search_error = "Informe o novo peso."
+        return
+    try:
+        weight = float(unicodedata.normalize('NFKC', str(raw)).strip())
+    except ValueError:
+        st.session_state.search_error = "Valor inválido. Use apenas números, ex: 1.5"
+        return
+    if weight <= 0:
+        st.session_state.search_error = "O peso deve ser maior que zero."
+        return
+
+    unit = st.session_state.get("unit_edit", target["unit"])
+    update_log_row(target["row"], weight, unit)
+    st.toast(f"{target['line']} atualizado")
+    st.session_state.edit_target = None
+    st.session_state.step = st.session_state.return_step or 1
 
 
 def reset_to_search():
@@ -917,6 +945,67 @@ elif st.session_state.step == 2:
 
 
 # ==========================================
+# Step 3: 履歴の編集（入力ミスの修正）
+# ==========================================
+elif st.session_state.step == 3:
+
+    target = st.session_state.edit_target
+    pop_error()
+
+    st.html(
+        f'<div class="banner warn">Corrigindo o peso registrado para <b>{esc(target["line"])}</b>. '
+        f'Ajuste o valor e salve.</div>'
+    )
+
+    with st.container(key="weightpanel"):
+        st.html(f"""
+        <div class="readout">
+          <div class="tag">Editando registro</div>
+          <div class="line-code">{esc(target['line'])}</div>
+          <div class="sub">Lançado em {esc(target['stamp'])}</div>
+        </div>
+        """)
+
+        edit_key = f"editweight_{st.session_state.form_counter}"
+        if edit_key not in st.session_state:
+            st.session_state[edit_key] = target["val"]
+        st.text_input(
+            "Novo peso",
+            key=edit_key,
+            label_visibility="collapsed"
+        )
+
+    _unit_e = st.session_state.get("unit_edit", target["unit"])
+    with st.container(key="unitrow"):
+        u1, u2 = st.columns(2)
+        with u1:
+            with st.container(key=f"unit_kg_{'on' if _unit_e == 'kg' else 'off'}"):
+                if st.button("kg", use_container_width=True, key="pick_kg_edit"):
+                    st.session_state.unit_edit = "kg"
+                    st.rerun()
+        with u2:
+            with st.container(key=f"unit_g_{'on' if _unit_e == 'g' else 'off'}"):
+                if st.button("g", use_container_width=True, key="pick_g_edit"):
+                    st.session_state.unit_edit = "g"
+                    st.rerun()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        with st.container(key="btn_confirm"):
+            if st.button("Salvar", use_container_width=True):
+                process_edit_save()
+                st.rerun()
+    with c2:
+        with st.container(key="btn_cancel"):
+            if st.button("Cancelar", use_container_width=True):
+                st.session_state.edit_target = None
+                st.session_state.step = st.session_state.return_step or 1
+                st.rerun()
+
+    focus_last_input("decimal")
+
+
+# ==========================================
 # 履歴
 # ==========================================
 if st.session_state.step in (1, 2, 15):
@@ -925,17 +1014,26 @@ if st.session_state.step in (1, 2, 15):
     if not df_month.empty and len(df_log.columns) >= 6:
         c_time, c_line, c_val, c_unit = (df_log.columns[0], df_log.columns[3],
                                          df_log.columns[4], df_log.columns[5])
-        rows = []
-        for _, r in df_month.tail(8)[::-1].iterrows():
-            stamp = str(r.get(c_time, ""))[5:16]   # MM-DD HH:MM
-            rows.append(
-                '<div class="row">'
-                f'<div><div class="l">{esc(r.get(c_line, "-"))}</div>'
-                f'<div class="t">{esc(stamp)} · {esc(r.get(df_log.columns[1], ""))}</div></div>'
-                f'<div class="w">{esc(r.get(c_val, "-"))} {esc(r.get(c_unit, ""))}</div>'
-                '</div>'
-            )
-        st.html(f'<div class="log">{"".join(rows)}</div>')
+        with st.container(key="histzone"):
+            for idx, r in df_month.tail(8)[::-1].iterrows():
+                stamp = str(r.get(c_time, ""))[5:16]   # MM-DD HH:MM
+                line_val = str(r.get(c_line, "-")).strip()
+                val = str(r.get(c_val, "-")).strip()
+                unit_val = str(r.get(c_unit, "")).strip()
+                label = f"{line_val}    {val} {unit_val}\n{stamp} · toque para corrigir"
+                if st.button(label, key=f"hist_{idx}", use_container_width=True):
+                    st.session_state.edit_target = {
+                        "row": int(idx) + 2,
+                        "line": line_val,
+                        "val": val,
+                        "unit": unit_val if unit_val in ("kg", "g") else "kg",
+                        "stamp": stamp,
+                    }
+                    st.session_state.unit_edit = st.session_state.edit_target["unit"]
+                    st.session_state.return_step = st.session_state.step
+                    st.session_state.form_counter += 1
+                    st.session_state.step = 3
+                    st.rerun()
     else:
         st.html(
             f'<div class="empty">Nenhum registro em {esc(st.session_state.target_month)} ainda.</div>'
