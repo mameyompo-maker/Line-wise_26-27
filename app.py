@@ -13,7 +13,7 @@ import html as html_lib
 # 1. ページ基本設定
 # ==========================================
 st.set_page_config(
-    page_title="Reg. Colheita",
+    page_title="JatR&D",
     page_icon="icon.png",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -823,7 +823,7 @@ if st.session_state.step == 0:
 
     st.html(f"""
     <div class="login-head">
-      <div class="mark">Registro de colheita</div>
+      <div class="mark">JatR&amp;D</div>
       <h1>{esc(site['app_title'])}</h1>
       <p>Identifique-se e escolha o mês e o ano antes de começar.</p>
     </div>
