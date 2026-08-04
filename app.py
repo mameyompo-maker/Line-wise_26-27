@@ -774,8 +774,12 @@ def process_submission():
 
 
 def focus_last_input(mode="numeric"):
-    attr = ("targetInput.setAttribute('inputmode', 'decimal');" if mode == "decimal"
-            else "targetInput.setAttribute('inputmode', 'numeric');"
+    if mode == "decimal":
+        attr = "targetInput.setAttribute('inputmode', 'decimal');"
+    elif mode == "text":
+        attr = ""
+    else:
+        attr = ("targetInput.setAttribute('inputmode', 'numeric');"
                  "targetInput.setAttribute('pattern', '[0-9]*');")
     components.html(
         f"""
@@ -854,7 +858,7 @@ if st.session_state.step == 0:
                     st.session_state.search_error = "Preencha o nome e selecione o mês."
                     st.rerun()
 
-    focus_last_input("numeric")
+    focus_last_input("text")
     st.stop()
 
 
