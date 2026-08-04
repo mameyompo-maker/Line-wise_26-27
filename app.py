@@ -569,7 +569,6 @@ SITES = {
         "not_found": "Linha {val} não existe no cadastro.",
         "already_registered_msg": "Esta linha já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
         "app_title": "Pesagem por linha",
-        "season_tabs": False,   # まだ Harvest_Log 1枚のまま（移行後に True へ）
         "log_tab": "Harvest_Log",
     },
     "blocks": {
@@ -584,41 +583,13 @@ SITES = {
         "not_found": "Bloco {val} não existe no cadastro.",
         "already_registered_msg": "Este bloco já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
         "app_title": "Pesagem por bloco",
-        "season_tabs": True,    # Record_25-26 / Record_26-27 のように収穫年度ごとに分ける
-        "log_tab": None,
+        "log_tab": "Harvest_Log",
     },
 }
 
 
 def current_site():
     return SITES[st.session_state.get("site", "lines")]
-
-
-def season_tab_name(target_month):
-    """'Jul-26' -> 'Record_26-27' / 'Jan-27' -> 'Record_26-27'（収穫年度は5月始まり）"""
-    mon, yy = target_month.split("-")
-    yy = int(yy)
-    start = yy - 1 if mon in ("Jan", "Feb", "Mar", "Apr") else yy
-    end = (start + 1) % 100
-    return f"Record_{start:02d}-{end:02d}"
-
-
-def log_worksheet_name():
-    site = current_site()
-    if site["season_tabs"]:
-        return season_tab_name(st.session_state.target_month)
-    return site["log_tab"]
-
-
-def get_or_create_log_worksheet(spreadsheet, name):
-    """収穫年度が切り替わって該当タブがまだ無いときは、ヘッダー付きで自動作成する"""
-    try:
-        return spreadsheet.worksheet(name)
-    except gspread.exceptions.WorksheetNotFound:
-        site = current_site()
-        ws = spreadsheet.add_worksheet(title=name, rows=500, cols=7)
-        ws.append_row(["Timestamp", "Username", "Month", site["field_col"], "Weight", "Unit", "Weight_g"])
-        return ws
 
 
 @st.cache_data(ttl=600)
@@ -704,8 +675,8 @@ def write_log(weight, unit):
     """スプレッドシートに1行追記する"""
     weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
     client = get_gspread_client()
-    spreadsheet = client.open_by_key(current_site()["spreadsheet_key"])
-    log_sheet = get_or_create_log_worksheet(spreadsheet, log_worksheet_name())
+    site = current_site()
+    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
     mozambique_tz = timezone(timedelta(hours=2))
     timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
     log_sheet.append_row([
@@ -724,7 +695,8 @@ def update_log_row(sheet_row, weight, unit):
     """既存の記録（履歴）を修正する"""
     weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
     client = get_gspread_client()
-    log_sheet = client.open_by_key(current_site()["spreadsheet_key"]).worksheet(log_worksheet_name())
+    site = current_site()
+    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
     log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
     load_log_data.clear()
 
@@ -732,7 +704,8 @@ def update_log_row(sheet_row, weight, unit):
 def delete_log_row(sheet_row):
     """履歴の記録を完全に取り消す（該当行を削除）"""
     client = get_gspread_client()
-    log_sheet = client.open_by_key(current_site()["spreadsheet_key"]).worksheet(log_worksheet_name())
+    site = current_site()
+    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
     log_sheet.delete_rows(sheet_row)
     load_log_data.clear()
 
@@ -891,7 +864,7 @@ if st.session_state.step == 0:
 try:
     _site_cfg = current_site()
     df_master = load_master_data(_site_cfg["spreadsheet_key"])
-    df_log = load_log_data(_site_cfg["spreadsheet_key"], log_worksheet_name())
+    df_log = load_log_data(_site_cfg["spreadsheet_key"], _site_cfg["log_tab"])
 except Exception as e:
     st.html(
         f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>'
