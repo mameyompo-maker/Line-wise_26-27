@@ -280,6 +280,37 @@ div[data-testid="stMainBlockContainer"] {
   min-height: 44px !important;
   border-radius: 8px !important;
 }
+/* ================= 拠点切り替え（ログイン前） ================= */
+.st-key-siterow div[data-testid="stHorizontalBlock"] {
+  gap: 6px !important;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 5px;
+  margin-bottom: 16px;
+}
+.st-key-site_lines_off div[data-testid="stButton"] > button,
+.st-key-site_blocks_off div[data-testid="stButton"] > button {
+  background: transparent !important;
+  border: none !important;
+  color: var(--ink-soft) !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  min-height: 40px !important;
+  border-radius: 8px !important;
+}
+.st-key-site_lines_on div[data-testid="stButton"] > button,
+.st-key-site_blocks_on div[data-testid="stButton"] > button {
+  background: var(--ink) !important;
+  border: none !important;
+  color: #FFFFFF !important;
+  font-family: var(--font-mono) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  min-height: 40px !important;
+  border-radius: 8px !important;
+}
 /* ================= ボタン共通 ================= */
 div[data-testid="stButton"] > button {
   border-radius: 12px !important;
@@ -524,13 +555,76 @@ def get_gspread_client():
     return gspread.authorize(credentials)
 
 
-SPREADSHEET_KEY = "1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk"
+# 圃場ごとの設定（ログイン前の切り替えボタンで選ぶ）
+SITES = {
+    "lines": {
+        "label": "Linhas",
+        "spreadsheet_key": "1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk",
+        "field_col": "Line Number",
+        "prefix": "L",
+        "unit_pl": "linhas",
+        "single_label": "Linha única",
+        "search_label": "Número inicial da linha",
+        "search_input_label": "Número da linha",
+        "not_found": "Linha {val} não existe no cadastro.",
+        "already_registered_msg": "Esta linha já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
+        "app_title": "Pesagem por linha",
+        "season_tabs": False,   # まだ Harvest_Log 1枚のまま（移行後に True へ）
+        "log_tab": "Harvest_Log",
+    },
+    "blocks": {
+        "label": "Blocos",
+        "spreadsheet_key": "1lm78EHRxKQRevTTN6NqBTMY4H8-qJuPRPpjEUoy0ses",
+        "field_col": "Block Number",
+        "prefix": "",
+        "unit_pl": "blocos",
+        "single_label": "Bloco único",
+        "search_label": "Número inicial do bloco",
+        "search_input_label": "Número do bloco",
+        "not_found": "Bloco {val} não existe no cadastro.",
+        "already_registered_msg": "Este bloco já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
+        "app_title": "Pesagem por bloco",
+        "season_tabs": True,    # Record_25-26 / Record_26-27 のように収穫年度ごとに分ける
+        "log_tab": None,
+    },
+}
+
+
+def current_site():
+    return SITES[st.session_state.get("site", "lines")]
+
+
+def season_tab_name(target_month):
+    """'Jul-26' -> 'Record_26-27' / 'Jan-27' -> 'Record_26-27'（収穫年度は5月始まり）"""
+    mon, yy = target_month.split("-")
+    yy = int(yy)
+    start = yy - 1 if mon in ("Jan", "Feb", "Mar", "Apr") else yy
+    end = (start + 1) % 100
+    return f"Record_{start:02d}-{end:02d}"
+
+
+def log_worksheet_name():
+    site = current_site()
+    if site["season_tabs"]:
+        return season_tab_name(st.session_state.target_month)
+    return site["log_tab"]
+
+
+def get_or_create_log_worksheet(spreadsheet, name):
+    """収穫年度が切り替わって該当タブがまだ無いときは、ヘッダー付きで自動作成する"""
+    try:
+        return spreadsheet.worksheet(name)
+    except gspread.exceptions.WorksheetNotFound:
+        site = current_site()
+        ws = spreadsheet.add_worksheet(title=name, rows=500, cols=7)
+        ws.append_row(["Timestamp", "Username", "Month", site["field_col"], "Weight", "Unit", "Weight_g"])
+        return ws
 
 
 @st.cache_data(ttl=600)
-def load_master_data():
+def load_master_data(spreadsheet_key):
     client = get_gspread_client()
-    sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Master")
+    sheet = client.open_by_key(spreadsheet_key).worksheet("Master")
     data = sheet.get_all_values()
     if len(data) > 0:
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -540,9 +634,12 @@ def load_master_data():
 
 
 @st.cache_data(ttl=5)
-def load_log_data():
+def load_log_data(spreadsheet_key, worksheet_name):
     client = get_gspread_client()
-    sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    try:
+        sheet = client.open_by_key(spreadsheet_key).worksheet(worksheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        return pd.DataFrame()
     data = sheet.get_all_values()
     if len(data) > 0:
         df = pd.DataFrame(data[1:], columns=data[0])
@@ -555,6 +652,7 @@ def load_log_data():
 # 4. セッションステート
 # ==========================================
 _defaults = {
+    "site": "lines",
     "username": "",
     "target_month": "",
     "step": 0,
@@ -581,29 +679,33 @@ def esc(v):
     return html_lib.escape(str(v))
 
 
-def get_line_numbers(line_str):
-    """'L586' -> [586] / 'L586 to L593' や 'L586-L593' -> [586, 593]"""
-    nums = re.findall(r'L\s*(\d+)', str(line_str), flags=re.IGNORECASE)
+def get_line_numbers(line_str, prefix="L"):
+    """'L586' -> [586] / 'L586 to L593' や 'L586-L593' -> [586, 593]
+    prefixが空文字の場合は接頭辞なしの素の数字にマッチする（ブロック番号など）"""
+    pattern = re.escape(prefix) + r'\s*(\d+)' if prefix else r'(\d+)'
+    nums = re.findall(pattern, str(line_str), flags=re.IGNORECASE)
     return [int(n) for n in nums]
 
 
-def get_first_number(line_str):
-    nums = get_line_numbers(line_str)
+def get_first_number(line_str, prefix="L"):
+    nums = get_line_numbers(line_str, prefix)
     return nums[0] if nums else None
 
 
 def describe_row(row):
-    nums = get_line_numbers(row.get("Line Number", ""))
+    site = current_site()
+    nums = get_line_numbers(row.get(site["field_col"], ""), site["prefix"])
     if len(nums) >= 2:
-        return f"{nums[-1] - nums[0] + 1} linhas ({nums[0]}-{nums[-1]})"
-    return "Linha única"
+        return f"{nums[-1] - nums[0] + 1} {site['unit_pl']} ({nums[0]}-{nums[-1]})"
+    return site["single_label"]
 
 
 def write_log(weight, unit):
     """スプレッドシートに1行追記する"""
     weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
     client = get_gspread_client()
-    log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    spreadsheet = client.open_by_key(current_site()["spreadsheet_key"])
+    log_sheet = get_or_create_log_worksheet(spreadsheet, log_worksheet_name())
     mozambique_tz = timezone(timedelta(hours=2))
     timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
     log_sheet.append_row([
@@ -622,7 +724,7 @@ def update_log_row(sheet_row, weight, unit):
     """既存の記録（履歴）を修正する"""
     weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
     client = get_gspread_client()
-    log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    log_sheet = client.open_by_key(current_site()["spreadsheet_key"]).worksheet(log_worksheet_name())
     log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
     load_log_data.clear()
 
@@ -630,7 +732,7 @@ def update_log_row(sheet_row, weight, unit):
 def delete_log_row(sheet_row):
     """履歴の記録を完全に取り消す（該当行を削除）"""
     client = get_gspread_client()
-    log_sheet = client.open_by_key(SPREADSHEET_KEY).worksheet("Harvest_Log")
+    log_sheet = client.open_by_key(current_site()["spreadsheet_key"]).worksheet(log_worksheet_name())
     log_sheet.delete_rows(sheet_row)
     load_log_data.clear()
 
@@ -731,27 +833,48 @@ def pop_error():
 # Step 0: ログイン
 # ==========================================
 if st.session_state.step == 0:
-    st.html("""
+    site = current_site()
+
+    with st.container(key="siterow"):
+        sa, sb = st.columns(2)
+        with sa:
+            with st.container(key=f"site_lines_{'on' if st.session_state.site == 'lines' else 'off'}"):
+                if st.button(SITES["lines"]["label"], use_container_width=True, key="pick_site_lines"):
+                    st.session_state.site = "lines"
+                    st.rerun()
+        with sb:
+            with st.container(key=f"site_blocks_{'on' if st.session_state.site == 'blocks' else 'off'}"):
+                if st.button(SITES["blocks"]["label"], use_container_width=True, key="pick_site_blocks"):
+                    st.session_state.site = "blocks"
+                    st.rerun()
+
+    st.html(f"""
     <div class="login-head">
       <div class="mark">Registro de colheita</div>
-      <h1>Pesagem por linha</h1>
-      <p>Identifique-se e escolha o mês antes de começar.</p>
+      <h1>{esc(site['app_title'])}</h1>
+      <p>Identifique-se e escolha o mês e o ano antes de começar.</p>
     </div>
     """)
 
     with st.container(key="loginpanel"):
         pop_error()
-        month_options = ["Selecione o mês", "May-26", "Jun-26", "Jul-26", "Aug-26",
-                         "Sep-26", "Oct-26", "Nov-26", "Dec-26", "Jan-27", "Feb-27",
-                         "Mar-27", "Apr-27"]
+        month_options = ["Selecione o mês", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        current_year = datetime.now(timezone(timedelta(hours=2))).year
+        year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
+
         user_input = st.text_input("Nome de usuário", placeholder="Seu nome")
-        month_input = st.selectbox("Mês de registro", month_options, index=0)
+        col_month, col_year = st.columns(2)
+        with col_month:
+            month_input = st.selectbox("Mês", month_options, index=0)
+        with col_year:
+            year_input = st.selectbox("Ano", year_options, index=year_options.index(str(current_year)))
 
         with st.container(key="btn_login"):
             if st.button("Começar", use_container_width=True):
                 if user_input and month_input != "Selecione o mês":
                     st.session_state.username = user_input
-                    st.session_state.target_month = month_input
+                    st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
                     st.session_state.step = 1
                     st.rerun()
                 else:
@@ -766,8 +889,9 @@ if st.session_state.step == 0:
 # データ読み込み
 # ==========================================
 try:
-    df_master = load_master_data()
-    df_log = load_log_data()
+    _site_cfg = current_site()
+    df_master = load_master_data(_site_cfg["spreadsheet_key"])
+    df_log = load_log_data(_site_cfg["spreadsheet_key"], log_worksheet_name())
 except Exception as e:
     st.html(
         f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>'
@@ -811,8 +935,10 @@ st.html(f"""
 # Step 1: ライン番号検索
 # ==========================================
 if st.session_state.step == 1:
+    site = current_site()
 
     def process_search():
+        site = current_site()
         raw = st.session_state.get(f"search_{st.session_state.form_counter}", "")
         val = unicodedata.normalize('NFKC', str(raw)).strip()
         st.session_state.search_error = ""
@@ -824,10 +950,10 @@ if st.session_state.step == 1:
 
         target = int(val)
         matched = [row for _, row in df_master.iterrows()
-                   if get_first_number(row.get("Line Number", "")) == target]
+                   if get_first_number(row.get(site["field_col"], ""), site["prefix"]) == target]
 
         if len(matched) == 1:
-            st.session_state.selected_line = matched[0].get("Line Number", "")
+            st.session_state.selected_line = matched[0].get(site["field_col"], "")
             st.session_state.matched_row = matched[0]
             st.session_state.candidate_rows = []
             st.session_state.step = 2
@@ -838,14 +964,14 @@ if st.session_state.step == 1:
             st.session_state.matched_row = None
             st.session_state.step = 15
         else:
-            st.session_state.search_error = f"Linha {val} não existe no cadastro."
+            st.session_state.search_error = site["not_found"].format(val=val)
 
     pop_error()
-    st.html('<div class="eyebrow">Número inicial da linha</div>')
+    st.html(f'<div class="eyebrow">{esc(site["search_label"])}</div>')
 
     with st.container(key="searchpanel"):
         st.text_input(
-            "Número da linha",
+            site["search_input_label"],
             placeholder="1",
             key=f"search_{st.session_state.form_counter}",
             on_change=process_search,
@@ -871,6 +997,7 @@ if st.session_state.step == 1:
 # Step 15: 候補が複数あるとき
 # ==========================================
 elif st.session_state.step == 15:
+    site = current_site()
 
     st.html(
         f'<div class="banner warn">O número <b>{esc(st.session_state.searched_number)}</b> '
@@ -880,7 +1007,7 @@ elif st.session_state.step == 15:
 
     with st.container(key="candzone"):
         for i, row in enumerate(st.session_state.candidate_rows):
-            line_name = str(row.get("Line Number", "")).strip()
+            line_name = str(row.get(site["field_col"], "")).strip()
             done = "  •  JÁ REGISTRADO" if already_registered(line_name) else ""
             label = (
                 f"{line_name}{done}\n"
@@ -904,6 +1031,7 @@ elif st.session_state.step == 15:
 # Step 2: 重量入力
 # ==========================================
 elif st.session_state.step == 2:
+    site = current_site()
 
     line_name = st.session_state.selected_line
     row_data = st.session_state.matched_row
@@ -944,8 +1072,7 @@ elif st.session_state.step == 2:
 
     if already_registered(line_name):
         st.html(
-            '<div class="banner warn">Esta linha já tem um registro neste mês. '
-            'Um novo lançamento será somado ao histórico.</div>'
+            f'<div class="banner warn">{esc(site["already_registered_msg"])}</div>'
         )
 
     # --- 計量パネル ---
