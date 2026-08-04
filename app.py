@@ -574,7 +574,7 @@ SITES = {
     "blocks": {
         "label": "Blocos",
         "spreadsheet_key": "1lm78EHRxKQRevTTN6NqBTMY4H8-qJuPRPpjEUoy0ses",
-        "field_col": "Block Number",
+        "field_col": "Block",
         "prefix": "",
         "unit_pl": "blocos",
         "single_label": "Bloco único",
