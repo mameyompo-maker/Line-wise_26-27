@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import re
+import threading
 import gspread
 from google.oauth2.service_account import Credentials
 import unicodedata
@@ -19,13 +20,32 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+APP_VERSION = "2.0"
+
 # 異常値とみなす閾値（グラム）
 WEIGHT_MAX_G = 30000   # 30kg超は確認を挟む
 WEIGHT_MIN_G = 5       # 5g未満は確認を挟む
 
+TZ_MZ = timezone(timedelta(hours=2))  # モザンビーク時間
+
+# 監査ログ・バックアップのタブ名（各スプレッドシート内に自動作成される）
+AUDIT_TAB = "Audit_Log"
+BACKUP_TAB = "Backup_Snapshot"
+AUDIT_HEADERS = ("Timestamp", "Action", "By User", "Role", "Record Owner",
+                 "Month", "Line/Block", "Old Value", "Old Unit", "New Value", "New Unit")
+
+GOOGLE_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+# 管理者パスワード。Streamlit Cloud の Secrets に admin_password を
+# 設定すればそちらが優先される（未設定時は下のデフォルト）。
+ADMIN_PASSWORD = str(st.secrets.get("admin_password", "JatRD2026"))
+
 
 # ==========================================
-# 2. デザイン（計量器コンセプト）
+# 2. デザイン（計量器コンセプト v2）
 # ==========================================
 st.html("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,9 +54,9 @@ st.html("""
 <style>
 :root {
   --ink:        #12261C;
-  --ink-soft:   #566B5E;
-  --line:       #D9E2DB;
-  --bg:         #F2F4EF;
+  --ink-soft:   #5B6F63;
+  --line:       #DCE4DC;
+  --bg:         #EFF3EC;
   --card:       #FFFFFF;
   --green:      #1F7A4C;
   --green-dark: #16593A;
@@ -47,6 +67,7 @@ st.html("""
   --red-soft:   #F9E6E4;
   --panel:      #16221C;
   --digit:      #9FE8BE;
+  --shadow:     0 1px 2px rgba(18,38,28,.05), 0 6px 20px rgba(18,38,28,.05);
   --font-ui:    'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono:  'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 }
@@ -58,7 +79,7 @@ footer                         { display: none !important; }
 #MainMenu                      { display: none !important; }
 /* ---- 全体 ---- */
 .stApp {
-  background: var(--bg) !important;
+  background: linear-gradient(180deg, #E9EFE6 0%, var(--bg) 260px) fixed !important;
   overflow-x: hidden !important;
 }
 html, body, [class*="css"] { font-family: var(--font-ui) !important; }
@@ -68,6 +89,11 @@ div[data-testid="stMainBlockContainer"] {
   padding-bottom: 40px !important;
   max-width: 560px !important;
 }
+@keyframes rise {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+div[data-testid="stMainBlockContainer"] { animation: rise .18s ease-out; }
 /* ================= トップバー ================= */
 .topbar {
   display: flex;
@@ -78,7 +104,8 @@ div[data-testid="stMainBlockContainer"] {
   border: 1px solid var(--line);
   border-radius: 14px;
   padding: 12px 14px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow);
 }
 .topbar .who {
   min-width: 0;
@@ -97,7 +124,20 @@ div[data-testid="stMainBlockContainer"] {
   letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  margin-top: 2px;
+  margin-top: 3px;
+}
+.badge-adm {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  background: var(--panel);
+  color: var(--digit);
+  border-radius: 5px;
+  padding: 2px 6px;
+  margin-left: 6px;
+  vertical-align: 2px;
 }
 .counter {
   flex: 0 0 auto;
@@ -137,6 +177,7 @@ div[data-testid="stMainBlockContainer"] {
   border-radius: 16px;
   padding: 14px 16px;
   margin-bottom: 10px;
+  box-shadow: var(--shadow);
 }
 .readout .tag {
   font-family: var(--font-mono);
@@ -248,8 +289,18 @@ div[data-testid="stMainBlockContainer"] {
   text-transform: uppercase !important;
   color: var(--ink-soft) !important;
 }
+/* 管理者ログインの折りたたみ */
+div[data-testid="stExpander"] {
+  border: 1px solid var(--line) !important;
+  border-radius: 12px !important;
+  background: var(--card) !important;
+  overflow: hidden;
+}
+div[data-testid="stExpander"] summary {
+  font-size: 13px !important;
+  color: var(--ink-soft) !important;
+}
 /* ================= 単位トグル（セグメント） ================= */
-/* 単位トグル（自作ボタン式） */
 .st-key-unitrow div[data-testid="stHorizontalBlock"] {
   gap: 6px !important;
   background: var(--card);
@@ -280,14 +331,14 @@ div[data-testid="stMainBlockContainer"] {
   min-height: 44px !important;
   border-radius: 8px !important;
 }
-/* ================= 拠点切り替え（ログイン前） ================= */
+/* ================= 拠点切り替え ================= */
 .st-key-siterow div[data-testid="stHorizontalBlock"] {
   gap: 6px !important;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 5px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 .st-key-site_lines_off div[data-testid="stButton"] > button,
 .st-key-site_blocks_off div[data-testid="stButton"] > button {
@@ -427,6 +478,18 @@ div[data-testid="stButton"] > button:focus-visible {
 .banner.warn  { background: var(--amber-soft); border-color: #E8CE9A; color: var(--amber); }
 .banner.error { background: var(--red-soft);   border-color: #E9BDB9; color: var(--red); }
 .banner.info  { background: var(--green-soft); border-color: #BDDCC9; color: var(--green-dark); }
+.banner.ok {
+  background: var(--green-soft);
+  border-color: #9ED0B4;
+  color: var(--green-dark);
+  font-weight: 600;
+}
+.banner.ok .tick {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  margin-right: 6px;
+}
 /* ================= 明細（メタ情報） ================= */
 .meta {
   display: grid;
@@ -480,6 +543,23 @@ div[data-testid="stButton"] > button:focus-visible {
   justify-content: flex-start !important;
   width: 100% !important;
 }
+/* 履歴：他人の記録（編集不可の静的カード） */
+.histrow {
+  border: 1.5px solid var(--line);
+  border-radius: 12px;
+  background: #FAFBF9;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.histrow .hs {
+  color: var(--ink-soft);
+  font-size: 12px;
+  margin-top: 2px;
+}
 .empty {
   border: 1px dashed var(--line);
   border-radius: 12px;
@@ -508,6 +588,15 @@ div[data-testid="stButton"] > button:focus-visible {
   letter-spacing: -.02em;
 }
 .login-head p { font-size: 14px; color: var(--ink-soft); margin: 0; line-height: 1.55; }
+.appfoot {
+  margin-top: 26px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #9AA99F;
+}
 /* 横並びの列はスマホでも維持する */
 div[data-testid="stHorizontalBlock"] {
   display: grid !important;
@@ -540,22 +629,95 @@ div[data-testid="stSpinner"] {
 
 
 # ==========================================
-# 3. データ接続
+# 3. 通信状態ウォッチャー（オフライン警告バー）
+# ==========================================
+def ensure_offline_watch():
+    """親ページに一度だけスクリプトを注入し、電波が切れたら赤い帯を表示する。"""
+    components.html("""
+    <script>
+    (function() {
+      const pd = window.parent.document;
+      if (pd.getElementById('jatrd-offline-watch')) return;
+      const s = pd.createElement('script');
+      s.id = 'jatrd-offline-watch';
+      s.textContent = "(function(){" +
+        "var b = document.createElement('div');" +
+        "b.id = 'jatrd-offline-banner';" +
+        "b.textContent = 'SEM CONEX\\u00c3O \\u2014 aguarde o sinal voltar antes de registrar';" +
+        "b.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:999999;" +
+        "background:#A6231C;color:#fff;font:600 13px/1.4 sans-serif;text-align:center;" +
+        "padding:9px 12px;letter-spacing:.04em;';" +
+        "document.body.appendChild(b);" +
+        "function u(){ b.style.display = navigator.onLine ? 'none' : 'block'; }" +
+        "window.addEventListener('online', u);" +
+        "window.addEventListener('offline', u);" +
+        "u();" +
+        "})();";
+      pd.body.appendChild(s);
+    })();
+    </script>
+    """, height=0)
+
+
+ensure_offline_watch()
+
+
+# ==========================================
+# 4. データ接続
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
     credentials = Credentials.from_service_account_info(
         st.secrets["gcp_service_account"],
-        scopes=scopes
+        scopes=GOOGLE_SCOPES
     )
     return gspread.authorize(credentials)
 
 
-# 圃場ごとの設定（ログイン前の切り替えボタンで選ぶ）
+@st.cache_resource(show_spinner=False)
+def get_spreadsheet(spreadsheet_key):
+    return get_gspread_client().open_by_key(spreadsheet_key)
+
+
+@st.cache_resource(show_spinner=False)
+def get_or_create_ws(spreadsheet_key, tab_name, headers):
+    """ワークシートを取得。無ければヘッダー付きで自動作成する。
+    （タブ名の食い違いによる WorksheetNotFound クラッシュを恒久的に防ぐ）"""
+    ss = get_spreadsheet(spreadsheet_key)
+    try:
+        return ss.worksheet(tab_name)
+    except gspread.exceptions.WorksheetNotFound:
+        try:
+            ws = ss.add_worksheet(title=tab_name, rows=2000, cols=max(12, len(headers)))
+            ws.append_row(list(headers))
+            return ws
+        except gspread.exceptions.APIError:
+            # 別の端末が同時に作成した場合など
+            return ss.worksheet(tab_name)
+
+
+class StaleRowError(Exception):
+    """編集・削除しようとした行が、シート上で既に変わっていた（他端末の操作など）"""
+    pass
+
+
+def with_retries(fn, attempts=3, wait=1.2):
+    """一時的な通信エラーに対して再試行する。恒久エラーはそのまま上げる。"""
+    for i in range(attempts):
+        try:
+            return fn()
+        except StaleRowError:
+            raise
+        except Exception:
+            if i == attempts - 1:
+                raise
+            # キャッシュ済みハンドルが腐っている可能性があるので作り直す
+            get_or_create_ws.clear()
+            get_spreadsheet.clear()
+            time.sleep(wait)
+
+
+# 圃場ごとの設定（ログイン前後の切り替えボタンで選ぶ）
 SITES = {
     "lines": {
         "label": "Linhas",
@@ -592,7 +754,15 @@ def current_site():
     return SITES[st.session_state.get("site", "lines")]
 
 
-@st.cache_data(ttl=600)
+def log_headers(site):
+    return ("Timestamp", "Username", "Month", site["field_col"], "Weight", "Unit", "Weight_g")
+
+
+def get_log_ws(site):
+    return get_or_create_ws(site["spreadsheet_key"], site["log_tab"], log_headers(site))
+
+
+@st.cache_data(ttl=600, show_spinner=False)
 def load_master_data(spreadsheet_key):
     client = get_gspread_client()
     sheet = client.open_by_key(spreadsheet_key).worksheet("Master")
@@ -604,7 +774,7 @@ def load_master_data(spreadsheet_key):
     return pd.DataFrame()
 
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=60, show_spinner=False)
 def load_log_data(spreadsheet_key, worksheet_name):
     client = get_gspread_client()
     try:
@@ -620,11 +790,12 @@ def load_log_data(spreadsheet_key, worksheet_name):
 
 
 # ==========================================
-# 4. セッションステート
+# 5. セッションステート
 # ==========================================
 _defaults = {
     "site": "lines",
     "username": "",
+    "role": "worker",         # worker / admin
     "target_month": "",
     "step": 0,
     "form_counter": 0,
@@ -637,6 +808,7 @@ _defaults = {
     "edit_target": None,      # 履歴編集中のレコード
     "return_step": None,      # 編集後に戻るステップ
     "confirm_delete": False,  # 削除確認待ち
+    "last_saved": None,       # 直近の保存成功（明示フィードバック用）
 }
 for _k, _v in _defaults.items():
     if _k not in st.session_state:
@@ -644,10 +816,22 @@ for _k, _v in _defaults.items():
 
 
 # ==========================================
-# 5. ヘルパー
+# 6. ヘルパー
 # ==========================================
 def esc(v):
     return html_lib.escape(str(v))
+
+
+def getv(row, *names, default="-"):
+    """列名の表記ゆれ（Mother Id / Mother ID など）を吸収して値を取る"""
+    for n in names:
+        try:
+            v = row.get(n)
+        except AttributeError:
+            v = None
+        if v is not None and str(v).strip() != "":
+            return v
+    return default
 
 
 def get_line_numbers(line_str, prefix="L"):
@@ -671,43 +855,146 @@ def describe_row(row):
     return site["single_label"]
 
 
-def write_log(weight, unit):
-    """スプレッドシートに1行追記する"""
-    weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
-    client = get_gspread_client()
+def now_stamp():
+    return datetime.now(TZ_MZ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def can_modify(record_owner):
+    """自分の記録は本人が、それ以外は管理者だけが編集・削除できる"""
+    if st.session_state.role == "admin":
+        return True
+    return str(record_owner).strip().casefold() == str(st.session_state.username).strip().casefold()
+
+
+# ---- 監査ログ（誰が・いつ・何を・どう変えたか。失敗しても本処理は止めない） ----
+def write_audit(action, owner, line, month, old=("", ""), new=("", "")):
+    try:
+        site = current_site()
+        ws = get_or_create_ws(site["spreadsheet_key"], AUDIT_TAB, AUDIT_HEADERS)
+        ws.append_row([
+            now_stamp(), action,
+            st.session_state.username, st.session_state.role,
+            owner, month, line,
+            old[0], old[1], new[0], new[1],
+        ])
+    except Exception:
+        pass
+
+
+# ---- 日次自動バックアップ（Harvest_Log を Backup_Snapshot に丸ごと複製） ----
+def _backup_worker(sa_info, spreadsheet_key, log_tab, today):
+    try:
+        creds = Credentials.from_service_account_info(sa_info, scopes=GOOGLE_SCOPES)
+        gc = gspread.authorize(creds)
+        ss = gc.open_by_key(spreadsheet_key)
+        try:
+            bws = ss.worksheet(BACKUP_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            bws = ss.add_worksheet(title=BACKUP_TAB, rows=2000, cols=12)
+        marker = bws.acell("A1").value or ""
+        if today in str(marker):
+            return  # 今日の分は取得済み
+        data = ss.worksheet(log_tab).get_all_values()
+        bws.clear()
+        bws.update([[f"AUTO BACKUP de {log_tab} — {today} — não editar"]], "A1")
+        if data:
+            bws.update(data, "A2")
+    except Exception:
+        pass  # バックアップ失敗は本処理に影響させない
+
+
+def kick_daily_backup():
+    """保存成功後に呼ぶ。セッション×拠点ごとに1回だけ、別スレッドで実行。"""
     site = current_site()
-    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
-    mozambique_tz = timezone(timedelta(hours=2))
-    timestamp = datetime.now(mozambique_tz).strftime("%Y-%m-%d %H:%M:%S")
-    log_sheet.append_row([
-        timestamp,
+    guard = f"backup_kicked_{site['spreadsheet_key']}"
+    if st.session_state.get(guard):
+        return
+    st.session_state[guard] = True
+    try:
+        sa_info = dict(st.secrets["gcp_service_account"])
+    except Exception:
+        return
+    today = datetime.now(TZ_MZ).strftime("%Y-%m-%d")
+    threading.Thread(
+        target=_backup_worker,
+        args=(sa_info, site["spreadsheet_key"], site["log_tab"], today),
+        daemon=True,
+    ).start()
+
+
+# ---- 書き込み・修正・削除 ----
+def write_log(weight, unit):
+    """スプレッドシートに1行追記する（通信エラー時は自動リトライ）"""
+    weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
+    site = current_site()
+    ts = now_stamp()
+    row = [
+        ts,
         st.session_state.username,
         st.session_state.target_month,
         st.session_state.selected_line,
         f"{weight:.2f}",
         unit,
-        weight_g
-    ])
+        weight_g,
+    ]
+    with_retries(lambda: get_log_ws(site).append_row(row))
+    write_audit("CREATE", st.session_state.username, st.session_state.selected_line,
+                st.session_state.target_month, new=(f"{weight:.2f}", unit))
     load_log_data.clear()
+    st.session_state.last_saved = {
+        "line": st.session_state.selected_line,
+        "val": f"{weight:.2f}",
+        "unit": unit,
+        "time": ts[11:16],
+    }
+    kick_daily_backup()
 
 
-def update_log_row(sheet_row, weight, unit):
-    """既存の記録（履歴）を修正する"""
+def _verify_row(ws, target):
+    """編集・削除の対象行が、キャッシュ時点から変わっていないか確認する"""
+    vals = ws.row_values(target["row"])
+    if (len(vals) < 4
+            or str(vals[0]).strip() != str(target.get("ts_full", "")).strip()
+            or str(vals[3]).strip() != str(target["line"]).strip()):
+        raise StaleRowError()
+
+
+def update_log_row(target, weight, unit):
+    """既存の記録（履歴）を修正する。修正前に行の一致を検証する。"""
     weight_g = int(round(weight * 1000)) if unit == "kg" else int(round(weight))
-    client = get_gspread_client()
     site = current_site()
-    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
-    log_sheet.update(f"E{sheet_row}:G{sheet_row}", [[f"{weight:.2f}", unit, weight_g]])
+
+    def _do():
+        ws = get_log_ws(site)
+        _verify_row(ws, target)
+        ws.update([[f"{weight:.2f}", unit, weight_g]], f"E{target['row']}:G{target['row']}")
+
+    with_retries(_do, attempts=2)
+    write_audit("EDIT", target.get("author", ""), target["line"], target.get("month", ""),
+                old=(target["val"], target["unit"]), new=(f"{weight:.2f}", unit))
     load_log_data.clear()
 
 
-def delete_log_row(sheet_row):
-    """履歴の記録を完全に取り消す（該当行を削除）"""
-    client = get_gspread_client()
+def delete_log_row(target):
+    """履歴の記録を完全に取り消す（該当行を削除）。削除前に行の一致を検証する。"""
     site = current_site()
-    log_sheet = client.open_by_key(site["spreadsheet_key"]).worksheet(site["log_tab"])
-    log_sheet.delete_rows(sheet_row)
+
+    def _do():
+        ws = get_log_ws(site)
+        _verify_row(ws, target)
+        ws.delete_rows(target["row"])
+
+    with_retries(_do, attempts=2)
+    write_audit("DELETE", target.get("author", ""), target["line"], target.get("month", ""),
+                old=(target["val"], target["unit"]))
     load_log_data.clear()
+
+
+SAVE_FAIL_MSG = ("Falha de conexão — o registro NÃO foi salvo. "
+                 "Verifique o sinal e toque em Registrar novamente.")
+STALE_MSG = ("Este registro mudou ou foi excluído em outro aparelho. "
+             "A lista foi atualizada — confira antes de tentar de novo.")
+NO_PERMISSION_MSG = "Somente o autor do registro ou o administrador pode alterá-lo."
 
 
 def process_edit_save():
@@ -727,9 +1014,23 @@ def process_edit_save():
         st.session_state.search_error = "O peso deve ser maior que zero."
         return
 
+    if not can_modify(target.get("author", "")):
+        st.session_state.search_error = NO_PERMISSION_MSG
+        return
+
     unit = st.session_state.get("unit_edit", target["unit"])
-    with st.spinner("Salvando…"):
-        update_log_row(target["row"], weight, unit)
+    try:
+        with st.spinner("Salvando…"):
+            update_log_row(target, weight, unit)
+    except StaleRowError:
+        load_log_data.clear()
+        st.session_state.search_error = STALE_MSG
+        st.session_state.edit_target = None
+        st.session_state.step = st.session_state.return_step or 1
+        return
+    except Exception:
+        st.session_state.search_error = SAVE_FAIL_MSG
+        return
     st.toast(f"{target['line']} atualizado")
     st.session_state.edit_target = None
     st.session_state.step = st.session_state.return_step or 1
@@ -767,8 +1068,13 @@ def process_submission():
         st.session_state.pending_weight = (weight, unit)
         return
 
-    with st.spinner("Registrando…"):
-        write_log(weight, unit)
+    try:
+        with st.spinner("Registrando…"):
+            write_log(weight, unit)
+    except Exception:
+        # 入力値は消さない（form_counterを進めない）ので、そのまま再送できる
+        st.session_state.search_error = SAVE_FAIL_MSG
+        return
     st.toast(f"{st.session_state.selected_line} registrado")
     reset_to_search()
 
@@ -806,24 +1112,40 @@ def pop_error():
         st.session_state.search_error = ""
 
 
+def _switch_site(new_site):
+    if st.session_state.site == new_site:
+        return
+    st.session_state.site = new_site
+    if st.session_state.step != 0:
+        # ログイン情報（名前・月）は保持したまま、検索状態だけリセット
+        st.session_state.last_saved = None
+        st.session_state.edit_target = None
+        st.session_state.confirm_delete = False
+        reset_to_search()
+
+
+def render_site_toggle():
+    with st.container(key="siterow"):
+        sa, sb = st.columns(2)
+        with sa:
+            with st.container(key=f"site_lines_{'on' if st.session_state.site == 'lines' else 'off'}"):
+                if st.button(SITES["lines"]["label"], use_container_width=True, key="pick_site_lines"):
+                    _switch_site("lines")
+                    st.rerun()
+        with sb:
+            with st.container(key=f"site_blocks_{'on' if st.session_state.site == 'blocks' else 'off'}"):
+                if st.button(SITES["blocks"]["label"], use_container_width=True, key="pick_site_blocks"):
+                    _switch_site("blocks")
+                    st.rerun()
+
+
 # ==========================================
 # Step 0: ログイン
 # ==========================================
 if st.session_state.step == 0:
     site = current_site()
 
-    with st.container(key="siterow"):
-        sa, sb = st.columns(2)
-        with sa:
-            with st.container(key=f"site_lines_{'on' if st.session_state.site == 'lines' else 'off'}"):
-                if st.button(SITES["lines"]["label"], use_container_width=True, key="pick_site_lines"):
-                    st.session_state.site = "lines"
-                    st.rerun()
-        with sb:
-            with st.container(key=f"site_blocks_{'on' if st.session_state.site == 'blocks' else 'off'}"):
-                if st.button(SITES["blocks"]["label"], use_container_width=True, key="pick_site_blocks"):
-                    st.session_state.site = "blocks"
-                    st.rerun()
+    render_site_toggle()
 
     st.html(f"""
     <div class="login-head">
@@ -837,7 +1159,7 @@ if st.session_state.step == 0:
         pop_error()
         month_options = ["Selecione o mês", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
                          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        current_year = datetime.now(timezone(timedelta(hours=2))).year
+        current_year = datetime.now(TZ_MZ).year
         year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
 
         user_input = st.text_input("Nome de usuário", placeholder="Seu nome")
@@ -847,17 +1169,27 @@ if st.session_state.step == 0:
         with col_year:
             year_input = st.selectbox("Ano", year_options, index=year_options.index(str(current_year)))
 
+        with st.expander("Administrador"):
+            admin_pw = st.text_input("Senha do administrador", type="password",
+                                     key="admin_pw_input", placeholder="Somente para o gestor")
+
         with st.container(key="btn_login"):
             if st.button("Começar", use_container_width=True):
-                if user_input and month_input != "Selecione o mês":
-                    st.session_state.username = user_input
+                pw = str(st.session_state.get("admin_pw_input", "") or "").strip()
+                if pw and pw != ADMIN_PASSWORD:
+                    st.session_state.search_error = "Senha do administrador incorreta."
+                    st.rerun()
+                elif not user_input or month_input == "Selecione o mês":
+                    st.session_state.search_error = "Preencha o nome e selecione o mês."
+                    st.rerun()
+                else:
+                    st.session_state.username = user_input.strip()
+                    st.session_state.role = "admin" if pw else "worker"
                     st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
                     st.session_state.step = 1
                     st.rerun()
-                else:
-                    st.session_state.search_error = "Preencha o nome e selecione o mês."
-                    st.rerun()
 
+    st.html(f'<div class="appfoot">JatR&amp;D · v{APP_VERSION} · Google Sheets sync</div>')
     focus_last_input("text")
     st.stop()
 
@@ -873,6 +1205,12 @@ except Exception as e:
     st.html(
         f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>'
     )
+    if st.button("Tentar novamente", use_container_width=True, key="retry_load"):
+        load_master_data.clear()
+        load_log_data.clear()
+        get_or_create_ws.clear()
+        get_spreadsheet.clear()
+        st.rerun()
     st.stop()
 
 
@@ -894,15 +1232,16 @@ def already_registered(line_name):
 
 
 # ---- トップバー ----
+_adm_badge = '<span class="badge-adm">ADMIN</span>' if st.session_state.role == "admin" else ""
 st.html(f"""
 <div class="topbar">
   <div class="who">
-    <div class="name">{esc(st.session_state.username)}</div>
-    <div class="month">{esc(st.session_state.target_month)}</div>
+    <div class="name">{esc(st.session_state.username)}{_adm_badge}</div>
+    <div class="month">{esc(st.session_state.target_month)} · {esc(_site_cfg['label'])}</div>
   </div>
   <div class="counter">
     <div class="num">{sack_count}</div>
-    <div class="lbl">sacos</div>
+    <div class="lbl">registros</div>
   </div>
 </div>
 """)
@@ -914,6 +1253,8 @@ st.html(f"""
 if st.session_state.step == 1:
     site = current_site()
 
+    render_site_toggle()
+
     def process_search():
         site = current_site()
         raw = st.session_state.get(f"search_{st.session_state.form_counter}", "")
@@ -921,6 +1262,7 @@ if st.session_state.step == 1:
         st.session_state.search_error = ""
         if not val:
             return
+        st.session_state.last_saved = None
         if not val.isdigit():
             st.session_state.search_error = "Digite apenas números."
             return
@@ -944,6 +1286,16 @@ if st.session_state.step == 1:
             st.session_state.search_error = site["not_found"].format(val=val)
 
     pop_error()
+
+    # 直近の保存成功を明示（「本当に保存されたか」への確実なフィードバック）
+    if st.session_state.last_saved:
+        _ls = st.session_state.last_saved
+        st.html(
+            f'<div class="banner ok"><span class="tick">✓</span>'
+            f'<b>{esc(_ls["line"])}</b> — {esc(_ls["val"])} {esc(_ls["unit"])} '
+            f'salvo às {esc(_ls["time"])}</div>'
+        )
+
     st.html(f'<div class="eyebrow">{esc(site["search_label"])}</div>')
 
     with st.container(key="searchpanel"):
@@ -962,8 +1314,11 @@ if st.session_state.step == 1:
     with st.container(key="btn_logout"):
         if st.button("Trocar de usuário", use_container_width=True):
             st.session_state.username = ""
+            st.session_state.role = "worker"
             st.session_state.target_month = ""
             st.session_state.candidate_rows = []
+            st.session_state.last_saved = None
+            st.session_state.pop("admin_pw_input", None)
             st.session_state.step = 0
             st.rerun()
 
@@ -988,8 +1343,8 @@ elif st.session_state.step == 15:
             done = "  •  JÁ REGISTRADO" if already_registered(line_name) else ""
             label = (
                 f"{line_name}{done}\n"
-                f"{describe_row(row)}  ·  Saco {row.get('Sack Number', '-')}\n"
-                f"{row.get('Variety', '-')}  ·  {row.get('Total no.of plant', '-')} plantas"
+                f"{describe_row(row)}  ·  Saco {getv(row, 'Sack Number')}\n"
+                f"{getv(row, 'Variety')}  ·  {getv(row, 'Total no.of plant', 'No.of plant available')} plantas"
             )
             if st.button(label, key=f"cand_{i}", use_container_width=True):
                 st.session_state.selected_line = line_name
@@ -1032,10 +1387,14 @@ elif st.session_state.step == 2:
         with c1:
             with st.container(key="btn_force"):
                 if st.button("Registrar assim", use_container_width=True):
-                    with st.spinner("Registrando…"):
-                        write_log(w, u)
-                    st.toast(f"{line_name} registrado")
-                    reset_to_search()
+                    try:
+                        with st.spinner("Registrando…"):
+                            write_log(w, u)
+                        st.toast(f"{line_name} registrado")
+                        reset_to_search()
+                    except Exception:
+                        st.session_state.search_error = SAVE_FAIL_MSG
+                        st.session_state.pending_weight = None
                     st.rerun()
         with c2:
             with st.container(key="btn_fix"):
@@ -1058,7 +1417,7 @@ elif st.session_state.step == 2:
         <div class="readout">
           <div class="tag">Pesando</div>
           <div class="line-code">{esc(line_name)}</div>
-          <div class="sub">{esc(describe_row(row_data))} &nbsp;·&nbsp; Saco {esc(row_data.get('Sack Number', '-'))}</div>
+          <div class="sub">{esc(describe_row(row_data))} &nbsp;·&nbsp; Saco {esc(getv(row_data, 'Sack Number'))}</div>
         </div>
         """)
 
@@ -1099,10 +1458,10 @@ elif st.session_state.step == 2:
     # --- 明細 ---
     st.html(f"""
     <div class="meta">
-      <div class="cell"><div class="k">ID da mãe</div><div class="v">{esc(row_data.get('Mother Id', '-'))}</div></div>
-      <div class="cell"><div class="k">Variedade</div><div class="v">{esc(row_data.get('Variety', '-'))}</div></div>
-      <div class="cell"><div class="k">Saco</div><div class="v">{esc(row_data.get('Sack Number', '-'))}</div></div>
-      <div class="cell"><div class="k">Plantas</div><div class="v">{esc(row_data.get('Total no.of plant', '-'))}</div></div>
+      <div class="cell"><div class="k">ID da mãe</div><div class="v">{esc(getv(row_data, 'Mother Id', 'Mother ID'))}</div></div>
+      <div class="cell"><div class="k">Variedade</div><div class="v">{esc(getv(row_data, 'Variety'))}</div></div>
+      <div class="cell"><div class="k">Saco</div><div class="v">{esc(getv(row_data, 'Sack Number'))}</div></div>
+      <div class="cell"><div class="k">Plantas</div><div class="v">{esc(getv(row_data, 'Total no.of plant', 'No.of plant available'))}</div></div>
     </div>
     """)
 
@@ -1117,6 +1476,10 @@ elif st.session_state.step == 3:
     target = st.session_state.edit_target
     pop_error()
 
+    if target is None:
+        st.session_state.step = 1
+        st.rerun()
+
     if st.session_state.confirm_delete:
         st.html(
             f'<div class="banner error">Excluir definitivamente o registro de <b>{esc(target["line"])}</b> '
@@ -1126,7 +1489,7 @@ elif st.session_state.step == 3:
         <div class="readout">
           <div class="tag">Registro a excluir</div>
           <div class="line-code">{esc(target['line'])}</div>
-          <div class="sub">Lançado em {esc(target['stamp'])}</div>
+          <div class="sub">Lançado em {esc(target['stamp'])} por {esc(target.get('author', '-'))}</div>
         </div>
         """)
 
@@ -1134,9 +1497,19 @@ elif st.session_state.step == 3:
         with d1:
             with st.container(key="btn_danger"):
                 if st.button("Sim, excluir", use_container_width=True):
-                    with st.spinner("Excluindo…"):
-                        delete_log_row(target["row"])
-                    st.toast(f"{target['line']} excluído")
+                    if not can_modify(target.get("author", "")):
+                        st.session_state.search_error = NO_PERMISSION_MSG
+                        st.session_state.confirm_delete = False
+                        st.rerun()
+                    try:
+                        with st.spinner("Excluindo…"):
+                            delete_log_row(target)
+                        st.toast(f"{target['line']} excluído")
+                    except StaleRowError:
+                        load_log_data.clear()
+                        st.session_state.search_error = STALE_MSG
+                    except Exception:
+                        st.session_state.search_error = SAVE_FAIL_MSG
                     st.session_state.edit_target = None
                     st.session_state.confirm_delete = False
                     st.session_state.step = st.session_state.return_step or 1
@@ -1158,7 +1531,7 @@ elif st.session_state.step == 3:
             <div class="readout">
               <div class="tag">Editando registro</div>
               <div class="line-code">{esc(target['line'])}</div>
-              <div class="sub">Lançado em {esc(target['stamp'])}</div>
+              <div class="sub">Lançado em {esc(target['stamp'])} por {esc(target.get('author', '-'))}</div>
             </div>
             """)
 
@@ -1213,28 +1586,42 @@ if st.session_state.step in (1, 2, 15):
     st.html('<div class="eyebrow" style="margin-top:26px">Últimos registros</div>')
 
     if not df_month.empty and len(df_log.columns) >= 6:
-        c_time, c_line, c_val, c_unit = (df_log.columns[0], df_log.columns[3],
-                                         df_log.columns[4], df_log.columns[5])
+        c_time, c_user, c_month, c_line, c_val, c_unit = (
+            df_log.columns[0], df_log.columns[1], df_log.columns[2],
+            df_log.columns[3], df_log.columns[4], df_log.columns[5])
         with st.container(key="histzone"):
             for idx, r in df_month.tail(8)[::-1].iterrows():
-                stamp = str(r.get(c_time, ""))[5:16]   # MM-DD HH:MM
+                ts_full = str(r.get(c_time, ""))
+                stamp = ts_full[5:16]   # MM-DD HH:MM
+                author = str(r.get(c_user, "")).strip()
                 line_val = str(r.get(c_line, "-")).strip()
                 val = str(r.get(c_val, "-")).strip()
                 unit_val = str(r.get(c_unit, "")).strip()
-                label = f"{line_val}    {val} {unit_val}\n{stamp} · toque para corrigir"
-                if st.button(label, key=f"hist_{idx}", use_container_width=True):
-                    st.session_state.edit_target = {
-                        "row": int(idx) + 2,
-                        "line": line_val,
-                        "val": val,
-                        "unit": unit_val if unit_val in ("kg", "g") else "kg",
-                        "stamp": stamp,
-                    }
-                    st.session_state.unit_edit = st.session_state.edit_target["unit"]
-                    st.session_state.return_step = st.session_state.step
-                    st.session_state.form_counter += 1
-                    st.session_state.step = 3
-                    st.rerun()
+
+                if can_modify(author):
+                    who = "você" if author.casefold() == st.session_state.username.strip().casefold() else author
+                    label = f"{line_val}    {val} {unit_val}\n{stamp} · {who} · toque para corrigir"
+                    if st.button(label, key=f"hist_{idx}", use_container_width=True):
+                        st.session_state.edit_target = {
+                            "row": int(idx) + 2,
+                            "line": line_val,
+                            "val": val,
+                            "unit": unit_val if unit_val in ("kg", "g") else "kg",
+                            "stamp": stamp,
+                            "ts_full": ts_full,
+                            "author": author,
+                            "month": str(r.get(c_month, "")).strip(),
+                        }
+                        st.session_state.unit_edit = st.session_state.edit_target["unit"]
+                        st.session_state.return_step = st.session_state.step
+                        st.session_state.form_counter += 1
+                        st.session_state.step = 3
+                        st.rerun()
+                else:
+                    st.html(
+                        f'<div class="histrow">{esc(line_val)} &nbsp;&nbsp; {esc(val)} {esc(unit_val)}'
+                        f'<div class="hs">{esc(stamp)} · {esc(author)} · 🔒 só o autor ou o admin</div></div>'
+                    )
     else:
         st.html(
             f'<div class="empty">Nenhum registro em {esc(st.session_state.target_month)} ainda.</div>'
