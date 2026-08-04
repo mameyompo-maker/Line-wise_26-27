@@ -41,7 +41,7 @@ st.html("""
   --green:      #1F7A4C;
   --green-dark: #16593A;
   --green-soft: #E4F1E9;
-  --amber:      #A86A12;
+  --amber:      #8C560D;
   --amber-soft: #FBF1DC;
   --red:        #A6231C;
   --red-soft:   #F9E6E4;
@@ -379,6 +379,10 @@ div[data-testid="stButton"] > button:focus-visible {
   white-space: pre-line !important;
   margin: 0 !important;
 }
+.st-key-candzone div[data-testid="stButton"] > button > div {
+  justify-content: flex-start !important;
+  width: 100% !important;
+}
 /* ================= バナー ================= */
 .banner {
   border-radius: 12px;
@@ -441,6 +445,10 @@ div[data-testid="stButton"] > button:focus-visible {
   white-space: pre-line !important;
   margin: 0 !important;
 }
+.st-key-histzone div[data-testid="stButton"] > button > div {
+  justify-content: flex-start !important;
+  width: 100% !important;
+}
 .empty {
   border: 1px dashed var(--line);
   border-radius: 12px;
@@ -487,6 +495,12 @@ div[data-testid="stHorizontalBlock"] div[data-testid="stButton"] > button p {
   word-break: break-word !important;
 }
 hr, div[data-testid="stDivider"] { border-color: var(--line) !important; }
+/* ================= 処理中インジケータ（通信待ちのフィードバック） ================= */
+div[data-testid="stSpinner"] {
+  color: var(--ink-soft) !important;
+  font-family: var(--font-ui) !important;
+  font-size: 13.5px !important;
+}
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
@@ -639,7 +653,8 @@ def process_edit_save():
         return
 
     unit = st.session_state.get("unit_edit", target["unit"])
-    update_log_row(target["row"], weight, unit)
+    with st.spinner("Salvando…"):
+        update_log_row(target["row"], weight, unit)
     st.toast(f"{target['line']} atualizado")
     st.session_state.edit_target = None
     st.session_state.step = st.session_state.return_step or 1
@@ -677,7 +692,8 @@ def process_submission():
         st.session_state.pending_weight = (weight, unit)
         return
 
-    write_log(weight, unit)
+    with st.spinner("Registrando…"):
+        write_log(weight, unit)
     st.toast(f"{st.session_state.selected_line} registrado")
     reset_to_search()
 
@@ -690,7 +706,7 @@ def focus_last_input(mode="numeric"):
         f"""
         <script>
         setTimeout(function() {{
-            const inputs = window.parent.document.querySelectorAll('input[type="text"]');
+            const inputs = window.parent.document.querySelectorAll('input[type="text"]:not([role="combobox"])');
             if (inputs.length > 0) {{
                 let targetInput = inputs[inputs.length - 1];
                 targetInput.focus();
@@ -911,7 +927,8 @@ elif st.session_state.step == 2:
         with c1:
             with st.container(key="btn_force"):
                 if st.button("Registrar assim", use_container_width=True):
-                    write_log(w, u)
+                    with st.spinner("Registrando…"):
+                        write_log(w, u)
                     st.toast(f"{line_name} registrado")
                     reset_to_search()
                     st.rerun()
@@ -1013,7 +1030,8 @@ elif st.session_state.step == 3:
         with d1:
             with st.container(key="btn_danger"):
                 if st.button("Sim, excluir", use_container_width=True):
-                    delete_log_row(target["row"])
+                    with st.spinner("Excluindo…"):
+                        delete_log_row(target["row"])
                     st.toast(f"{target['line']} excluído")
                     st.session_state.edit_target = None
                     st.session_state.confirm_delete = False
