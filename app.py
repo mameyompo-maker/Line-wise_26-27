@@ -14,7 +14,7 @@ import html as html_lib
 # 1. ページ基本設定
 # ==========================================
 st.set_page_config(
-    page_title="JatR&D",
+    page_title="JatLog",
     page_icon="icon.png",
     layout="centered",
     initial_sidebar_state="collapsed"
@@ -1167,7 +1167,7 @@ if st.session_state.step == 0:
 
     st.html(f"""
     <div class="login-head">
-      <div class="mark">JatR&amp;D</div>
+      <div class="mark">JatLog</div>
       <h1>{esc(site['app_title'])}</h1>
       <p>Identifique-se para começar. O nome fica guardado até você trocar de usuário.</p>
     </div>
@@ -1208,7 +1208,7 @@ if st.session_state.step == 0:
                     st.session_state.step = 8
                     st.rerun()
 
-    st.html(f'<div class="appfoot">JatR&amp;D · v{APP_VERSION} · Google Sheets sync</div>')
+    st.html(f'<div class="appfoot">JatLog · v{APP_VERSION} · Google Sheets sync</div>')
     focus_last_input("text")
     st.stop()
 
@@ -1221,7 +1221,7 @@ if st.session_state.step == 8:
 
     st.html(f"""
     <div class="login-head">
-      <div class="mark">JatR&amp;D</div>
+      <div class="mark">JatLog</div>
       <h1>Escolha o mês</h1>
       <p>Usuário: <b>{esc(st.session_state.username)}</b>{' · administrador' if st.session_state.role == 'admin' else ''}</p>
     </div>
@@ -1267,7 +1267,7 @@ if st.session_state.step == 8:
             st.session_state.step = 0
             st.rerun()
 
-    st.html(f'<div class="appfoot">JatR&amp;D · v{APP_VERSION} · Google Sheets sync</div>')
+    st.html(f'<div class="appfoot">JatLog · v{APP_VERSION} · Google Sheets sync</div>')
     st.stop()
 
 
