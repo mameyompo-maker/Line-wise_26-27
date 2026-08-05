@@ -421,6 +421,7 @@ div[data-testid="stButton"] > button:focus-visible {
 /* 控えめなリンク風ボタン */
 .st-key-btn_logout div[data-testid="stButton"] > button,
 .st-key-btn_back div[data-testid="stButton"] > button,
+.st-key-btn_month div[data-testid="stButton"] > button,
 .st-key-btn_exit_admin div[data-testid="stButton"] > button {
   background: transparent !important;
   border: none !important;
@@ -1157,7 +1158,7 @@ def render_site_toggle():
 
 
 # ==========================================
-# Step 0: ログイン
+# Step 0: ログイン（名前だけ。月・年は次の画面で選ぶ）
 # ==========================================
 if st.session_state.step == 0:
     site = current_site()
@@ -1168,22 +1169,14 @@ if st.session_state.step == 0:
     <div class="login-head">
       <div class="mark">JatR&amp;D</div>
       <h1>{esc(site['app_title'])}</h1>
-      <p>Identifique-se e escolha o mês e o ano antes de começar.</p>
+      <p>Identifique-se para começar. O nome fica guardado até você trocar de usuário.</p>
     </div>
     """)
 
     with st.container(key="loginpanel"):
         pop_error()
-        month_options = ["Selecione o mês"] + MONTHS
-        current_year = datetime.now(TZ_MZ).year
-        year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
 
         user_input = st.text_input("Nome de usuário", placeholder="Seu nome")
-        col_month, col_year = st.columns(2)
-        with col_month:
-            month_input = st.selectbox("Mês", month_options, index=0)
-        with col_year:
-            year_input = st.selectbox("Ano", year_options, index=year_options.index(str(current_year)))
 
         # 一度管理者になったら、ユーザー交代しても管理者のまま（明示的に抜けるまで）
         if st.session_state.role == "admin":
@@ -1206,19 +1199,75 @@ if st.session_state.step == 0:
                 if not already_admin and pw and pw != ADMIN_PASSWORD:
                     st.session_state.search_error = "Senha do administrador incorreta."
                     st.rerun()
-                elif not user_input or month_input == "Selecione o mês":
-                    st.session_state.search_error = "Preencha o nome e selecione o mês."
+                elif not user_input or not user_input.strip():
+                    st.session_state.search_error = "Informe seu nome."
                     st.rerun()
                 else:
                     st.session_state.username = user_input.strip()
                     st.session_state.role = "admin" if (already_admin or pw) else "worker"
-                    st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
-                    st.session_state.admin_month_pick = st.session_state.target_month
-                    st.session_state.step = 1
+                    st.session_state.step = 8
                     st.rerun()
 
     st.html(f'<div class="appfoot">JatR&amp;D · v{APP_VERSION} · Google Sheets sync</div>')
     focus_last_input("text")
+    st.stop()
+
+
+# ==========================================
+# Step 8: 月・年の選択（名前は保持したまま何度でも戻れる）
+# ==========================================
+if st.session_state.step == 8:
+    site = current_site()
+
+    st.html(f"""
+    <div class="login-head">
+      <div class="mark">JatR&amp;D</div>
+      <h1>Escolha o mês</h1>
+      <p>Usuário: <b>{esc(st.session_state.username)}</b>{' · administrador' if st.session_state.role == 'admin' else ''}</p>
+    </div>
+    """)
+
+    with st.container(key="loginpanel"):
+        pop_error()
+        _now = datetime.now(TZ_MZ)
+        current_year = _now.year
+        year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
+
+        # 既に選んでいた月・年があればそれを、無ければ今月を初期値にする
+        def_m_idx = _now.month - 1
+        def_y_idx = 1
+        try:
+            _pm, _py = st.session_state.target_month.split("-")
+            def_m_idx = MONTHS.index(_pm)
+            def_y_idx = year_options.index(f"20{_py}")
+        except (ValueError, AttributeError):
+            pass
+
+        col_month, col_year = st.columns(2)
+        with col_month:
+            month_input = st.selectbox("Mês", MONTHS, index=def_m_idx)
+        with col_year:
+            year_input = st.selectbox("Ano", year_options, index=def_y_idx)
+
+        with st.container(key="btn_login"):
+            if st.button("Continuar", use_container_width=True):
+                st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
+                st.session_state.admin_month_pick = st.session_state.target_month
+                st.session_state.last_saved = None
+                st.session_state.edit_target = None
+                st.session_state.confirm_delete = False
+                reset_to_search()
+                st.rerun()
+
+    with st.container(key="btn_logout"):
+        if st.button("Trocar de usuário", use_container_width=True):
+            st.session_state.username = ""
+            st.session_state.target_month = ""
+            st.session_state.pop("admin_pw_input", None)
+            st.session_state.step = 0
+            st.rerun()
+
+    st.html(f'<div class="appfoot">JatR&amp;D · v{APP_VERSION} · Google Sheets sync</div>')
     st.stop()
 
 
@@ -1357,16 +1406,26 @@ if st.session_state.step == 1:
         '<div class="banner info">Digite o número e toque em Enter para avançar.</div>'
     )
 
-    with st.container(key="btn_logout"):
-        # 管理者権限は保持したまま名前・月だけ入れ直せる（抜けるのはログイン画面から）
-        if st.button("Trocar de usuário", use_container_width=True):
-            st.session_state.username = ""
-            st.session_state.target_month = ""
-            st.session_state.candidate_rows = []
-            st.session_state.last_saved = None
-            st.session_state.pop("admin_pw_input", None)
-            st.session_state.step = 0
-            st.rerun()
+    l1, l2 = st.columns(2)
+    with l1:
+        with st.container(key="btn_month"):
+            # 名前はそのままに、月・年の選択画面へ戻る
+            if st.button("Mudar mês", use_container_width=True):
+                st.session_state.candidate_rows = []
+                st.session_state.last_saved = None
+                st.session_state.step = 8
+                st.rerun()
+    with l2:
+        with st.container(key="btn_logout"):
+            # 管理者権限は保持したまま名前だけ入れ直せる（抜けるのはログイン画面から）
+            if st.button("Trocar de usuário", use_container_width=True):
+                st.session_state.username = ""
+                st.session_state.target_month = ""
+                st.session_state.candidate_rows = []
+                st.session_state.last_saved = None
+                st.session_state.pop("admin_pw_input", None)
+                st.session_state.step = 0
+                st.rerun()
 
     focus_last_input("numeric")
 
