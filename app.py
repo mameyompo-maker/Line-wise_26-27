@@ -406,9 +406,22 @@ div[data-testid="stButton"] > button:focus-visible {
   background: var(--red) !important;
   color: #FFFFFF !important;
 }
+/* 管理者の月切替（コンパクト） */
+.st-key-adminmonthrow label {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .1em !important;
+  text-transform: uppercase !important;
+  color: var(--ink-soft) !important;
+}
+.st-key-adminmonthrow input {
+  font-family: var(--font-mono) !important;
+  font-weight: 600 !important;
+}
 /* 控えめなリンク風ボタン */
 .st-key-btn_logout div[data-testid="stButton"] > button,
-.st-key-btn_back div[data-testid="stButton"] > button {
+.st-key-btn_back div[data-testid="stButton"] > button,
+.st-key-btn_exit_admin div[data-testid="stButton"] > button {
   background: transparent !important;
   border: none !important;
   color: var(--ink-soft) !important;
@@ -855,6 +868,10 @@ def describe_row(row):
     return site["single_label"]
 
 
+MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+          "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+
+
 def now_stamp():
     return datetime.now(TZ_MZ).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1157,8 +1174,7 @@ if st.session_state.step == 0:
 
     with st.container(key="loginpanel"):
         pop_error()
-        month_options = ["Selecione o mês", "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-                         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+        month_options = ["Selecione o mês"] + MONTHS
         current_year = datetime.now(TZ_MZ).year
         year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
 
@@ -1169,14 +1185,25 @@ if st.session_state.step == 0:
         with col_year:
             year_input = st.selectbox("Ano", year_options, index=year_options.index(str(current_year)))
 
-        with st.expander("Administrador"):
-            admin_pw = st.text_input("Senha do administrador", type="password",
-                                     key="admin_pw_input", placeholder="Somente para o gestor")
+        # 一度管理者になったら、ユーザー交代しても管理者のまま（明示的に抜けるまで）
+        if st.session_state.role == "admin":
+            st.html('<div class="banner info">Modo administrador ativo — '
+                    'você continuará como administrador.</div>')
+            with st.container(key="btn_exit_admin"):
+                if st.button("Sair do modo administrador", use_container_width=True):
+                    st.session_state.role = "worker"
+                    st.session_state.pop("admin_pw_input", None)
+                    st.rerun()
+        else:
+            with st.expander("Administrador"):
+                st.text_input("Senha do administrador", type="password",
+                              key="admin_pw_input", placeholder="Somente para o gestor")
 
         with st.container(key="btn_login"):
             if st.button("Começar", use_container_width=True):
                 pw = str(st.session_state.get("admin_pw_input", "") or "").strip()
-                if pw and pw != ADMIN_PASSWORD:
+                already_admin = st.session_state.role == "admin"
+                if not already_admin and pw and pw != ADMIN_PASSWORD:
                     st.session_state.search_error = "Senha do administrador incorreta."
                     st.rerun()
                 elif not user_input or month_input == "Selecione o mês":
@@ -1184,8 +1211,9 @@ if st.session_state.step == 0:
                     st.rerun()
                 else:
                     st.session_state.username = user_input.strip()
-                    st.session_state.role = "admin" if pw else "worker"
+                    st.session_state.role = "admin" if (already_admin or pw) else "worker"
                     st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
+                    st.session_state.admin_month_pick = st.session_state.target_month
                     st.session_state.step = 1
                     st.rerun()
 
@@ -1255,6 +1283,24 @@ if st.session_state.step == 1:
 
     render_site_toggle()
 
+    # 管理者はログインし直さずに任意の月へ移動できる
+    if st.session_state.role == "admin":
+        def _admin_pick_month():
+            pick = st.session_state.get("admin_month_pick")
+            if pick and pick != st.session_state.target_month:
+                st.session_state.target_month = pick
+                st.session_state.last_saved = None
+                reset_to_search()
+
+        _cy = datetime.now(TZ_MZ).year
+        _mopts = [f"{m}-{str(y)[-2:]}" for y in (_cy - 1, _cy, _cy + 1) for m in MONTHS]
+        _cur = st.session_state.target_month
+        if _cur not in _mopts:
+            _mopts = [_cur] + _mopts
+        with st.container(key="adminmonthrow"):
+            st.selectbox("Mês (administrador)", _mopts, index=_mopts.index(_cur),
+                         key="admin_month_pick", on_change=_admin_pick_month)
+
     def process_search():
         site = current_site()
         raw = st.session_state.get(f"search_{st.session_state.form_counter}", "")
@@ -1312,9 +1358,9 @@ if st.session_state.step == 1:
     )
 
     with st.container(key="btn_logout"):
+        # 管理者権限は保持したまま名前・月だけ入れ直せる（抜けるのはログイン画面から）
         if st.button("Trocar de usuário", use_container_width=True):
             st.session_state.username = ""
-            st.session_state.role = "worker"
             st.session_state.target_month = ""
             st.session_state.candidate_rows = []
             st.session_state.last_saved = None
