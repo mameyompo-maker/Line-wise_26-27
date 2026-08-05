@@ -331,36 +331,30 @@ div[data-testid="stExpander"] summary {
   min-height: 44px !important;
   border-radius: 8px !important;
 }
-/* ================= 拠点切り替え ================= */
-.st-key-siterow div[data-testid="stHorizontalBlock"] {
-  gap: 6px !important;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 5px;
-  margin-bottom: 14px;
+/* ================= 拠点リスト（月選択画面。拠点が増えても縦に1行増えるだけ） ================= */
+.st-key-sitelist div[data-testid="stButton"] > button {
+  min-height: 62px !important;
+  padding: 12px 16px !important;
+  margin-bottom: 8px !important;
+  text-align: left !important;
+  justify-content: flex-start !important;
+  white-space: pre-line !important;
+  line-height: 1.45 !important;
 }
-.st-key-site_lines_off div[data-testid="stButton"] > button,
-.st-key-site_blocks_off div[data-testid="stButton"] > button {
-  background: transparent !important;
-  border: none !important;
-  color: var(--ink-soft) !important;
-  font-family: var(--font-mono) !important;
-  font-size: 13px !important;
-  font-weight: 600 !important;
-  min-height: 40px !important;
-  border-radius: 8px !important;
+.st-key-sitelist div[data-testid="stButton"] > button p {
+  text-align: left !important;
+  white-space: pre-line !important;
+  margin: 0 !important;
 }
-.st-key-site_lines_on div[data-testid="stButton"] > button,
-.st-key-site_blocks_on div[data-testid="stButton"] > button {
-  background: var(--ink) !important;
-  border: none !important;
-  color: #FFFFFF !important;
-  font-family: var(--font-mono) !important;
-  font-size: 13px !important;
+.st-key-sitelist div[data-testid="stButton"] > button > div {
+  justify-content: flex-start !important;
+  width: 100% !important;
+}
+div[class*="st-key-sitecard_"][class*="_on"] div[data-testid="stButton"] > button {
+  border: 2px solid var(--green) !important;
+  background: var(--green-soft) !important;
+  color: var(--green-dark) !important;
   font-weight: 700 !important;
-  min-height: 40px !important;
-  border-radius: 8px !important;
 }
 /* ================= ボタン共通 ================= */
 div[data-testid="stButton"] > button {
@@ -734,7 +728,8 @@ def with_retries(fn, attempts=3, wait=1.2):
 # 圃場ごとの設定（ログイン前後の切り替えボタンで選ぶ）
 SITES = {
     "lines": {
-        "label": "Linhas",
+        "label": "Tanheia (Linhas)",
+        "short": "Tanheia",
         "spreadsheet_key": "1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk",
         "field_col": "Line Number",
         "prefix": "L",
@@ -748,7 +743,8 @@ SITES = {
         "log_tab": "Harvest_Log",
     },
     "blocks": {
-        "label": "Blocos",
+        "label": "7 de Abril (Blocos)",
+        "short": "7 de Abril",
         "spreadsheet_key": "1lm78EHRxKQRevTTN6NqBTMY4H8-qJuPRPpjEUoy0ses",
         "field_col": "Block",
         "prefix": "",
@@ -1130,45 +1126,15 @@ def pop_error():
         st.session_state.search_error = ""
 
 
-def _switch_site(new_site):
-    if st.session_state.site == new_site:
-        return
-    st.session_state.site = new_site
-    if st.session_state.step != 0:
-        # ログイン情報（名前・月）は保持したまま、検索状態だけリセット
-        st.session_state.last_saved = None
-        st.session_state.edit_target = None
-        st.session_state.confirm_delete = False
-        reset_to_search()
-
-
-def render_site_toggle():
-    with st.container(key="siterow"):
-        sa, sb = st.columns(2)
-        with sa:
-            with st.container(key=f"site_lines_{'on' if st.session_state.site == 'lines' else 'off'}"):
-                if st.button(SITES["lines"]["label"], use_container_width=True, key="pick_site_lines"):
-                    _switch_site("lines")
-                    st.rerun()
-        with sb:
-            with st.container(key=f"site_blocks_{'on' if st.session_state.site == 'blocks' else 'off'}"):
-                if st.button(SITES["blocks"]["label"], use_container_width=True, key="pick_site_blocks"):
-                    _switch_site("blocks")
-                    st.rerun()
-
-
 # ==========================================
-# Step 0: ログイン（名前だけ。月・年は次の画面で選ぶ）
+# Step 0: ログイン（名前だけ。拠点と月・年は次の画面で選ぶ）
 # ==========================================
 if st.session_state.step == 0:
-    site = current_site()
 
-    render_site_toggle()
-
-    st.html(f"""
+    st.html("""
     <div class="login-head">
       <div class="mark">JatLog</div>
-      <h1>{esc(site['app_title'])}</h1>
+      <h1>Registro de colheita</h1>
       <p>Identifique-se para começar. O nome fica guardado até você trocar de usuário.</p>
     </div>
     """)
@@ -1214,7 +1180,7 @@ if st.session_state.step == 0:
 
 
 # ==========================================
-# Step 8: 月・年の選択（名前は保持したまま何度でも戻れる）
+# Step 8: 拠点と月・年の選択（名前は保持したまま何度でも戻れる）
 # ==========================================
 if st.session_state.step == 8:
     site = current_site()
@@ -1222,10 +1188,21 @@ if st.session_state.step == 8:
     st.html(f"""
     <div class="login-head">
       <div class="mark">JatLog</div>
-      <h1>Escolha o mês</h1>
+      <h1>Escolha o local e o mês</h1>
       <p>Usuário: <b>{esc(st.session_state.username)}</b>{' · administrador' if st.session_state.role == 'admin' else ''}</p>
     </div>
     """)
+
+    # 拠点リスト（SITESに追加するだけで自動的にここへ並ぶ）
+    st.html('<div class="eyebrow">Local</div>')
+    with st.container(key="sitelist"):
+        for _k, _s in SITES.items():
+            _sel = st.session_state.site == _k
+            with st.container(key=f"sitecard_{_k}_{'on' if _sel else 'off'}"):
+                _lbl = f"{'✓  ' if _sel else ''}{_s['label']}\n{_s['app_title']}"
+                if st.button(_lbl, use_container_width=True, key=f"pick_site_{_k}"):
+                    st.session_state.site = _k
+                    st.rerun()
 
     with st.container(key="loginpanel"):
         pop_error()
@@ -1314,7 +1291,7 @@ st.html(f"""
 <div class="topbar">
   <div class="who">
     <div class="name">{esc(st.session_state.username)}{_adm_badge}</div>
-    <div class="month">{esc(st.session_state.target_month)} · {esc(_site_cfg['label'])}</div>
+    <div class="month">{esc(st.session_state.target_month)} · {esc(_site_cfg['short'])}</div>
   </div>
   <div class="counter">
     <div class="num">{sack_count}</div>
@@ -1329,8 +1306,6 @@ st.html(f"""
 # ==========================================
 if st.session_state.step == 1:
     site = current_site()
-
-    render_site_toggle()
 
     # 管理者はログインし直さずに任意の月へ移動できる
     if st.session_state.role == "admin":
@@ -1409,8 +1384,8 @@ if st.session_state.step == 1:
     l1, l2 = st.columns(2)
     with l1:
         with st.container(key="btn_month"):
-            # 名前はそのままに、月・年の選択画面へ戻る
-            if st.button("Mudar mês", use_container_width=True):
+            # 名前はそのままに、拠点と月・年の選択画面へ戻る
+            if st.button("Mudar local ou mês", use_container_width=True):
                 st.session_state.candidate_rows = []
                 st.session_state.last_saved = None
                 st.session_state.step = 8
