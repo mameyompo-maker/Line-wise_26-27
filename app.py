@@ -331,31 +331,6 @@ div[data-testid="stExpander"] summary {
   min-height: 44px !important;
   border-radius: 8px !important;
 }
-/* ================= 拠点リスト（月選択画面。拠点が増えても縦に1行増えるだけ） ================= */
-.st-key-sitelist div[data-testid="stButton"] > button {
-  min-height: 62px !important;
-  padding: 12px 16px !important;
-  margin-bottom: 8px !important;
-  text-align: left !important;
-  justify-content: flex-start !important;
-  white-space: pre-line !important;
-  line-height: 1.45 !important;
-}
-.st-key-sitelist div[data-testid="stButton"] > button p {
-  text-align: left !important;
-  white-space: pre-line !important;
-  margin: 0 !important;
-}
-.st-key-sitelist div[data-testid="stButton"] > button > div {
-  justify-content: flex-start !important;
-  width: 100% !important;
-}
-div[class*="st-key-sitecard_"][class*="_on"] div[data-testid="stButton"] > button {
-  border: 2px solid var(--green) !important;
-  background: var(--green-soft) !important;
-  color: var(--green-dark) !important;
-  font-weight: 700 !important;
-}
 /* ================= ボタン共通 ================= */
 div[data-testid="stButton"] > button {
   border-radius: 12px !important;
@@ -1193,19 +1168,15 @@ if st.session_state.step == 8:
     </div>
     """)
 
-    # 拠点リスト（SITESに追加するだけで自動的にここへ並ぶ）
-    st.html('<div class="eyebrow">Local</div>')
-    with st.container(key="sitelist"):
-        for _k, _s in SITES.items():
-            _sel = st.session_state.site == _k
-            with st.container(key=f"sitecard_{_k}_{'on' if _sel else 'off'}"):
-                _lbl = f"{'✓  ' if _sel else ''}{_s['label']}\n{_s['app_title']}"
-                if st.button(_lbl, use_container_width=True, key=f"pick_site_{_k}"):
-                    st.session_state.site = _k
-                    st.rerun()
-
     with st.container(key="loginpanel"):
         pop_error()
+
+        # 拠点プルダウン（SITESに追加するだけで自動的に選択肢が増える）
+        _site_keys = list(SITES.keys())
+        _site_labels = [SITES[k]["label"] for k in _site_keys]
+        _cur_site_idx = _site_keys.index(st.session_state.get("site", _site_keys[0]))
+        local_input = st.selectbox("Local", _site_labels, index=_cur_site_idx)
+
         _now = datetime.now(TZ_MZ)
         current_year = _now.year
         year_options = [str(current_year - 1), str(current_year), str(current_year + 1)]
@@ -1228,6 +1199,7 @@ if st.session_state.step == 8:
 
         with st.container(key="btn_login"):
             if st.button("Continuar", use_container_width=True):
+                st.session_state.site = _site_keys[_site_labels.index(local_input)]
                 st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
                 st.session_state.admin_month_pick = st.session_state.target_month
                 st.session_state.last_saved = None
