@@ -1,14 +1,15 @@
 // アプリシェル（ラッパー本体）だけをキャッシュする最小構成。
 // Streamlitアプリ本体は常にネットワークから取得する（データが常に最新である必要があるため）。
 
-const CACHE_NAME = 'colheita-shell-v2';
+const CACHE_NAME = 'jatlog-shell-v3';
 
 const SHELL_FILES = [
   './',
   './index.html',
   './manifest.json',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './icon-512-maskable.png'
 ];
 
 self.addEventListener('install', (event) => {
