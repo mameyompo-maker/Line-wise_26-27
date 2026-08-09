@@ -1121,12 +1121,15 @@ def code_matches(v):
 def remember_activation(code):
     """正しいコードをPWAラッパー側に覚えさせ、次回から入力不要にする。
     ラッパー以外（生のURLや他サイトへの埋め込み）では宛先オリジンが一致せず、
-    ブラウザがメッセージを破棄するので届かない。"""
+    ブラウザがメッセージを破棄するので届かない。
+
+    宛先は window.top。Streamlit Cloud はアプリをさらに内側の iframe で配信する
+    ため、階層を数える書き方（parent.parent）だと本番でラッパーに届かない。"""
     msg = json.dumps({"type": "jatlog-activation", "code": code})
     components.html(
         f"""
         <script>
-        try {{ window.parent.parent.postMessage({msg}, "{PWA_ORIGIN}"); }} catch (e) {{}}
+        try {{ window.top.postMessage({msg}, "{PWA_ORIGIN}"); }} catch (e) {{}}
         </script>
         """, height=0
     )
