@@ -11,8 +11,22 @@ APP_URL = "https://line-wise26-27-5t5bh4e67t3xjvevkazpru.streamlit.app/"
 
 
 def rendered(page):
+    # The page title is set by st.set_page_config at runtime, so seeing it
+    # proves the frontend booted and the websocket delivered the app config.
+    # DOM-based checks are fallbacks (Cloud may run a newer Streamlit whose
+    # internal test ids differ).
     try:
-        return page.locator('div[data-testid="stAppViewContainer"]').count() > 0
+        if "JatLog" in (page.title() or ""):
+            return True
+    except Exception:
+        pass
+    try:
+        if page.locator('div[data-testid="stAppViewContainer"]').count() > 0:
+            return True
+    except Exception:
+        pass
+    try:
+        return page.get_by_text(re.compile("Registro de colheita|Começar")).count() > 0
     except Exception:
         return False
 
