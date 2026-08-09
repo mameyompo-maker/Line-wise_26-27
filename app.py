@@ -8,6 +8,7 @@ from google.oauth2.service_account import Credentials
 import unicodedata
 import streamlit.components.v1 as components
 import time
+import json
 import html as html_lib
 
 # ==========================================
@@ -42,6 +43,13 @@ GOOGLE_SCOPES = [
 # 管理者パスワード。Streamlit Cloud の Secrets に admin_password を
 # 設定すればそちらが優先される（未設定時は下のデフォルト）。
 ADMIN_PASSWORD = str(st.secrets.get("admin_password", "JatRD2026"))
+
+# 端末を有効化するコード。配られた人だけがアプリを開けるようにするための入口。
+# Secrets の activation_code で上書きできる。
+ACTIVATION_CODE = str(st.secrets.get("activation_code", "jatropha"))
+
+# PWAラッパー（GitHub Pages）のオリジン。コードを覚えさせる postMessage の宛先。
+PWA_ORIGIN = "https://mameyompo-maker.github.io"
 
 
 # ==========================================
@@ -781,6 +789,8 @@ _defaults = {
     "site": "lines",
     "username": "",
     "role": "worker",         # worker / admin
+    "activated": False,       # アクティベーションコードを通過したか
+    "remember_code": "",      # ラッパーに覚えさせる待ちのコード
     "target_month": "",
     "step": 0,
     "form_counter": 0,
@@ -1099,6 +1109,65 @@ def pop_error():
             f'<div class="banner error">{esc(st.session_state.search_error)}</div>'
         )
         st.session_state.search_error = ""
+
+
+# ==========================================
+# Step A: アクティベーション（コードを渡された端末だけが先へ進める）
+# ==========================================
+def code_matches(v):
+    return str(v or "").strip().casefold() == ACTIVATION_CODE.strip().casefold()
+
+
+def remember_activation(code):
+    """正しいコードをPWAラッパー側に覚えさせ、次回から入力不要にする。
+    ラッパー以外（生のURLや他サイトへの埋め込み）では宛先オリジンが一致せず、
+    ブラウザがメッセージを破棄するので届かない。"""
+    msg = json.dumps({"type": "jatlog-activation", "code": code})
+    components.html(
+        f"""
+        <script>
+        try {{ window.parent.parent.postMessage({msg}, "{PWA_ORIGIN}"); }} catch (e) {{}}
+        </script>
+        """, height=0
+    )
+
+
+# ラッパーは ?ac=... を付けて開くので、配布済みの端末は入力なしで通過する
+if not st.session_state.activated and code_matches(st.query_params.get("ac", "")):
+    st.session_state.activated = True
+
+if not st.session_state.activated:
+    st.html("""
+    <div class="login-head">
+      <div class="mark">JatLog</div>
+      <h1>Ativar o aparelho</h1>
+      <p>Digite o código de activação que o gestor lhe deu.
+         Só é preciso uma vez em cada aparelho.</p>
+    </div>
+    """)
+
+    with st.container(key="loginpanel"):
+        pop_error()
+
+        code_input = st.text_input("Código de activação", placeholder="Código do gestor")
+
+        with st.container(key="btn_login"):
+            if st.button("Ativar", use_container_width=True):
+                if code_matches(code_input):
+                    st.session_state.activated = True
+                    st.session_state.remember_code = code_input.strip()
+                else:
+                    st.session_state.search_error = "Código de activação incorreto."
+                st.rerun()
+
+    st.html(f'<div class="appfoot">JatLog · v{APP_VERSION}</div>')
+    focus_last_input("text")
+    st.stop()
+
+if st.session_state.remember_code:
+    _code = st.session_state.remember_code
+    st.session_state.remember_code = ""
+    remember_activation(_code)
 
 
 # ==========================================

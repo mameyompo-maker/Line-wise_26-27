@@ -92,6 +92,133 @@
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* アクティベーション画面（この端末で一度だけ） */
+    #gate {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      overflow-y: auto;
+      padding: calc(env(safe-area-inset-top, 0px) + 32px) 20px 32px;
+      background: #F2F4EF;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #12261C;
+    }
+
+    #gate.show { display: block; }
+
+    .gate-inner {
+      max-width: 420px;
+      margin: 0 auto;
+    }
+
+    #gate img {
+      width: 72px;
+      height: 72px;
+      border-radius: 18px;
+      display: block;
+    }
+
+    .gate-mark {
+      margin: 18px 0 0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 11px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      color: #1F7A4C;
+      font-weight: 600;
+    }
+
+    #gate h1 {
+      font-size: 26px;
+      font-weight: 700;
+      margin: 8px 0 6px;
+      line-height: 1.22;
+      letter-spacing: -.02em;
+    }
+
+    #gate .sub {
+      margin: 0 0 22px;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #566B5E;
+    }
+
+    .gate-card {
+      background: #FFFFFF;
+      border: 1px solid #DCE4DC;
+      border-radius: 16px;
+      padding: 18px 16px;
+      box-shadow: 0 1px 2px rgba(18, 38, 28, .05), 0 6px 20px rgba(18, 38, 28, .05);
+    }
+
+    .gate-card label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: #566B5E;
+      margin-bottom: 8px;
+    }
+
+    #gate input {
+      width: 100%;
+      font-size: 16px;
+      padding: 12px 14px;
+      border: 1.5px solid #DCE4DC;
+      border-radius: 12px;
+      background: #FFFFFF;
+      color: #12261C;
+      font-family: inherit;
+    }
+
+    #gate input:focus {
+      outline: none;
+      border-color: #1F7A4C;
+      box-shadow: 0 0 0 4px #E4F1E9;
+    }
+
+    #gate button {
+      width: 100%;
+      margin-top: 14px;
+      padding: 13px 16px;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      color: #FFFFFF;
+      background: #1F7A4C;
+      border: 1px solid #1F7A4C;
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    #gate button:active { background: #16593A; }
+
+    #gate .warn {
+      display: none;
+      margin-bottom: 12px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      background: #F9E6E4;
+      border: 1px solid #E9BDB9;
+      color: #A6231C;
+    }
+
+    #gate .warn.show { display: block; }
+
+    .gate-foot {
+      margin-top: 26px;
+      text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #9AA99F;
+    }
   </style>
 </head>
 <body>
@@ -102,31 +229,103 @@
     <p>Carregando</p>
   </div>
 
+  <div id="gate">
+    <div class="gate-inner">
+      <img src="./icon-192.png" alt="" />
+      <p class="gate-mark">JatLog</p>
+      <h1>Ativar o aparelho</h1>
+      <p class="sub">Digite o código de activação que o gestor lhe deu.
+        Só é preciso uma vez neste aparelho.</p>
+
+      <div class="gate-card">
+        <div class="warn" id="gate-warn"></div>
+        <label for="gate-code">Código de activação</label>
+        <input type="text" id="gate-code" autocomplete="off" autocapitalize="off"
+               autocorrect="off" spellcheck="false" enterkeyhint="go" />
+        <button type="button" id="gate-go">Ativar</button>
+      </div>
+
+      <div class="gate-foot">Registro de colheita</div>
+    </div>
+  </div>
+
   <div id="frame-wrap">
     <iframe
       id="app"
-      src="https://line-wise26-27-5t5bh4e67t3xjvevkazpru.streamlit.app/?embed=true"
       allow="clipboard-read; clipboard-write"
       referrerpolicy="no-referrer-when-downgrade"></iframe>
   </div>
 
   <script>
-    // iframeの読み込み完了でスプラッシュを消す
+    var APP_ORIGIN = 'https://line-wise26-27-5t5bh4e67t3xjvevkazpru.streamlit.app';
+    var APP_URL    = APP_ORIGIN + '/?embed=true';
+    var STORE_KEY  = 'jatlog_activation_code';
+
     var splash = document.getElementById('splash');
+    var gate   = document.getElementById('gate');
+    var warn   = document.getElementById('gate-warn');
     var frame  = document.getElementById('app');
+
+    // localStorage はプライベートモードなどで例外を投げることがある
+    function readCode() {
+      try { return localStorage.getItem(STORE_KEY) || ''; } catch (e) { return ''; }
+    }
+    function saveCode(v) {
+      try { localStorage.setItem(STORE_KEY, v); } catch (e) {}
+    }
 
     function hideSplash() {
       splash.classList.add('hidden');
       setTimeout(function () { splash.style.display = 'none'; }, 500);
     }
 
-    frame.addEventListener('load', function () {
+    // コードを付けてアプリ本体を読み込む
+    function boot(code) {
+      gate.classList.remove('show');
+      splash.style.display = '';
+      splash.classList.remove('hidden');
+      frame.src = APP_URL + '&ac=' + encodeURIComponent(code);
       // Streamlitは初期描画に少し時間がかかるので余裕を持たせる
-      setTimeout(hideSplash, 1200);
+      frame.addEventListener('load', function () {
+        setTimeout(hideSplash, 1200);
+      }, { once: true });
+      // 保険：一定時間で必ず消す
+      setTimeout(hideSplash, 12000);
+    }
+
+    function showGate() {
+      splash.style.display = 'none';
+      gate.classList.add('show');
+      setTimeout(function () { document.getElementById('gate-code').focus(); }, 200);
+    }
+
+    function activate() {
+      var v = document.getElementById('gate-code').value.trim();
+      if (!v) {
+        warn.textContent = 'Digite o código de activação.';
+        warn.classList.add('show');
+        return;
+      }
+      warn.classList.remove('show');
+      saveCode(v);
+      boot(v);
+    }
+
+    document.getElementById('gate-go').addEventListener('click', activate);
+    document.getElementById('gate-code').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') activate();
     });
 
-    // 保険：一定時間で必ず消す
-    setTimeout(hideSplash, 12000);
+    // アプリ本体で正しいコードを入れ直した場合、その値を覚え直す
+    // （ラッパーはコードの正解を知らないので、判定は必ずアプリ側が行う）
+    window.addEventListener('message', function (e) {
+      if (e.origin !== APP_ORIGIN) return;
+      var d = e.data;
+      if (d && d.type === 'jatlog-activation' && d.code) saveCode(String(d.code));
+    });
+
+    var saved = readCode();
+    if (saved) { boot(saved); } else { showGate(); }
 
     // Service Worker（Chromeでのインストール要件）
     if ('serviceWorker' in navigator) {
