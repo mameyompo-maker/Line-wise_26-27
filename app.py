@@ -53,6 +53,71 @@ PWA_ORIGIN = "https://mameyompo-maker.github.io"
 
 
 # ==========================================
+# 1b. 表示言語（PT / EN / 日本語）
+# ==========================================
+# 文言は i18n.py に全部ある。ここにあるのは引き方だけ。
+# ⚠ スプレッドシートに書く値は言語に関係なく従来どおり（月名 Aug-26、単位 kg/g、
+#    監査ログの CREATE/EDIT/DELETE）。言語は画面表示にしか効かない。
+from i18n import LANGS, TEXTS, CSS_JA
+
+if "lang" not in st.session_state:
+    # 既定はポルトガル語。?lang=en / ?lang=ja を付けて開けば最初からその言語で始まる
+    # （データを見返す人がブックマークで使う用。現場はそのままポルトガル語）。
+    _l = str(st.query_params.get("lang", "") or "").strip().lower()
+    st.session_state.lang = _l if _l in TEXTS else "pt"
+
+
+def t(key, **kw):
+    """選ばれている言語の文言。{x} は kw の値に置き換わる。
+    キーが無い言語があってもポルトガル語に落ちるだけで、画面は壊れない。"""
+    table = TEXTS.get(st.session_state.get("lang", "pt"), TEXTS["pt"])
+    s = table.get(key)
+    if s is None:
+        s = TEXTS["pt"].get(key, key)
+    return s.format(**kw) if kw else s
+
+
+def t_site(field, **kw):
+    """今の拠点に固有の文言（検索欄のラベル、複数形など）"""
+    return t("sitio.{}.{}".format(st.session_state.get("site", "lines"), field), **kw)
+
+
+LANG_WIDGET = "seg_lang"     # 入口の画面で共有する1つのキー（画面ごとに分けると値がずれる）
+
+
+def _rotulo_do_idioma(code):
+    for c, label in LANGS:
+        if c == code:
+            return label
+    return LANGS[0][1]
+
+
+def _mudar_idioma():
+    escolhido = st.session_state.get(LANG_WIDGET)
+    for code, label in LANGS:
+        if label == escolhido:
+            st.session_state.lang = code
+            return
+    # 選択中のものをもう一度押すと選択解除になるので、元に戻す
+    st.session_state[LANG_WIDGET] = _rotulo_do_idioma(st.session_state.lang)
+
+
+def language_picker():
+    """入口の画面にだけ出す言語スイッチ。作業中の画面には出さない
+    （現場で誤って触る余地を増やさないため）。"""
+    if LANG_WIDGET not in st.session_state:
+        st.session_state[LANG_WIDGET] = _rotulo_do_idioma(st.session_state.lang)
+    with st.container(key="langrow"):
+        st.segmented_control(
+            "Idioma",
+            [label for _, label in LANGS],
+            key=LANG_WIDGET,
+            on_change=_mudar_idioma,
+            label_visibility="collapsed",
+        )
+
+
+# ==========================================
 # 2. デザイン（計量器コンセプト v2）
 # ==========================================
 st.html("""
@@ -383,6 +448,29 @@ div[data-testid="stButton"] > button:focus-visible {
   background: var(--red) !important;
   color: #FFFFFF !important;
 }
+/* 言語スイッチ（入口の画面だけ・小さく右寄せ） */
+/* stVerticalBlock は縦並びのflexなので、右寄せは align-items で効かせる */
+.st-key-langrow { align-items: flex-end !important; margin-bottom: 2px !important; }
+.st-key-langrow div[data-baseweb="button-group"] { gap: 4px !important; }
+.st-key-langrow button {
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 0 12px !important;
+  font-family: var(--font-mono) !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  letter-spacing: .06em !important;
+  border-radius: 9px !important;
+  border: 1px solid var(--line) !important;
+  background: var(--card) !important;
+  color: var(--ink-soft) !important;
+}
+.st-key-langrow button[aria-checked="true"],
+.st-key-langrow button[kind="segmented_controlActive"] {
+  background: var(--ink) !important;
+  border-color: var(--ink) !important;
+  color: #FFFFFF !important;
+}
 /* 管理者の月切替（コンパクト） */
 .st-key-adminmonthrow label {
   font-size: 11px !important;
@@ -619,33 +707,44 @@ div[data-testid="stSpinner"] {
 """)
 
 
+# 日本語のときだけ、欧文向けの字間・大文字化を打ち消す
+if st.session_state.lang == "ja":
+    st.html(CSS_JA)
+
+
 # ==========================================
 # 3. 通信状態ウォッチャー（オフライン警告バー）
 # ==========================================
 def ensure_offline_watch():
-    """親ページに一度だけスクリプトを注入し、電波が切れたら赤い帯を表示する。"""
-    components.html("""
+    """親ページに一度だけスクリプトを注入し、電波が切れたら赤い帯を表示する。
+
+    帯の文字だけは毎回入れ直す。スクリプトは一度しか注入しないので、
+    そうしないと言語を切り替えても帯が前の言語のまま残る。"""
+    texto = json.dumps(t("rede.semRede"))
+    components.html(f"""
     <script>
-    (function() {
+    (function() {{
       const pd = window.parent.document;
-      if (pd.getElementById('jatrd-offline-watch')) return;
-      const s = pd.createElement('script');
-      s.id = 'jatrd-offline-watch';
-      s.textContent = "(function(){" +
-        "var b = document.createElement('div');" +
-        "b.id = 'jatrd-offline-banner';" +
-        "b.textContent = 'SEM CONEX\\u00c3O \\u2014 aguarde o sinal voltar antes de registrar';" +
-        "b.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:999999;" +
-        "background:#A6231C;color:#fff;font:600 13px/1.4 sans-serif;text-align:center;" +
-        "padding:9px 12px;letter-spacing:.04em;';" +
-        "document.body.appendChild(b);" +
-        "function u(){ b.style.display = navigator.onLine ? 'none' : 'block'; }" +
-        "window.addEventListener('online', u);" +
-        "window.addEventListener('offline', u);" +
-        "u();" +
-        "})();";
-      pd.body.appendChild(s);
-    })();
+      if (!pd.getElementById('jatrd-offline-watch')) {{
+        const s = pd.createElement('script');
+        s.id = 'jatrd-offline-watch';
+        s.textContent = "(function(){{" +
+          "var b = document.createElement('div');" +
+          "b.id = 'jatrd-offline-banner';" +
+          "b.style.cssText = 'display:none;position:fixed;top:0;left:0;right:0;z-index:999999;" +
+          "background:#A6231C;color:#fff;font:600 13px/1.4 sans-serif;text-align:center;" +
+          "padding:9px 12px;letter-spacing:.04em;';" +
+          "document.body.appendChild(b);" +
+          "function u(){{ b.style.display = navigator.onLine ? 'none' : 'block'; }}" +
+          "window.addEventListener('online', u);" +
+          "window.addEventListener('offline', u);" +
+          "u();" +
+          "}})();";
+        pd.body.appendChild(s);
+      }}
+      const b = pd.getElementById('jatrd-offline-banner');
+      if (b) b.textContent = {texto};
+    }})();
     </script>
     """, height=0)
 
@@ -716,13 +815,6 @@ SITES = {
         "spreadsheet_key": "1ulQjYCYlhZjxGMO3iTWGPmxM7U-O-NkCs2OOm6mY1Wk",
         "field_col": "Line Number",
         "prefix": "L",
-        "unit_pl": "linhas",
-        "single_label": "Linha única",
-        "search_label": "Número inicial da linha",
-        "search_input_label": "Número da linha",
-        "not_found": "Linha {val} não existe no cadastro.",
-        "already_registered_msg": "Esta linha já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
-        "app_title": "Pesagem por linha",
         "log_tab": "Harvest_Log",
     },
     "blocks": {
@@ -731,13 +823,6 @@ SITES = {
         "spreadsheet_key": "1lm78EHRxKQRevTTN6NqBTMY4H8-qJuPRPpjEUoy0ses",
         "field_col": "Block",
         "prefix": "",
-        "unit_pl": "blocos",
-        "single_label": "Bloco único",
-        "search_label": "Número inicial do bloco",
-        "search_input_label": "Número do bloco",
-        "not_found": "Bloco {val} não existe no cadastro.",
-        "already_registered_msg": "Este bloco já tem um registro neste mês. Um novo lançamento será somado ao histórico.",
-        "app_title": "Pesagem por bloco",
         "log_tab": "Harvest_Log",
     },
 }
@@ -817,6 +902,44 @@ def esc(v):
     return html_lib.escape(str(v))
 
 
+def parse_number(raw):
+    """入力された数値を読む。画面の言語に関係なく「.」「,」の両方を小数点として
+    受け付ける。ポルトガル語では 1,5、英語では 1.5 と書くうえ、現場では端末の
+    キーボードとアプリの言語が食い違うこともあるため。
+
+    規則: 最後に出てくる「.」か「,」を小数点とみなす。同じ記号が2回以上出て
+    きたら、それは桁区切り（1.234.567）として全部落とす。
+    NFKC で全角数字・全角記号も吸収する（日本語キーボード対策）。
+
+    数値として読めなければ ValueError を投げる（float() と同じ扱いにできる）。
+    """
+    s = unicodedata.normalize("NFKC", str(raw))
+    s = re.sub(r"[\s ']", "", s)
+    if not s:
+        raise ValueError("vazio")
+
+    cut = max(s.rfind("."), s.rfind(","))
+    if cut >= 0:
+        mark = s[cut]
+        if s.find(mark) != cut:
+            s = s.replace(".", "").replace(",", "")          # 桁区切りだけ
+        else:
+            s = s[:cut].replace(".", "").replace(",", "") + "." + s[cut + 1:]
+
+    if not re.fullmatch(r"[+-]?\d*\.?\d*", s) or not re.search(r"\d", s):
+        raise ValueError(f"não é número: {raw!r}")
+    return float(s)
+
+
+def fmt_num(v):
+    """同じ数値を、選ばれている言語の小数点で表示する。
+    シートに書く値は別（常に「.」）— こちらは画面に出すときだけ使う。"""
+    if v is None or v == "":
+        return ""
+    s = str(v)
+    return s.replace(".", ",") if t("num.separador") == "," else s.replace(",", ".")
+
+
 def getv(row, *names, default="-"):
     """列名の表記ゆれ（Mother Id / Mother ID など）を吸収して値を取る"""
     for n in names:
@@ -846,8 +969,8 @@ def describe_row(row):
     site = current_site()
     nums = get_line_numbers(row.get(site["field_col"], ""), site["prefix"])
     if len(nums) >= 2:
-        return f"{nums[-1] - nums[0] + 1} {site['unit_pl']} ({nums[0]}-{nums[-1]})"
-    return site["single_label"]
+        return f"{nums[-1] - nums[0] + 1} {t_site('plural')} ({nums[0]}-{nums[-1]})"
+    return t_site("unico")
 
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -989,48 +1112,41 @@ def delete_log_row(target):
     load_log_data.clear()
 
 
-SAVE_FAIL_MSG = ("Falha de conexão — o registro NÃO foi salvo. "
-                 "Verifique o sinal e toque em Registrar novamente.")
-STALE_MSG = ("Este registro mudou ou foi excluído em outro aparelho. "
-             "A lista foi atualizada — confira antes de tentar de novo.")
-NO_PERMISSION_MSG = "Somente o autor do registro ou o administrador pode alterá-lo."
-
-
 def process_edit_save():
     """履歴編集フォームの保存処理"""
     target = st.session_state.edit_target
     key = f"editweight_{st.session_state.form_counter}"
     raw = st.session_state.get(key, "")
     if not raw:
-        st.session_state.search_error = "Informe o novo peso."
+        st.session_state.search_error = t("peso.faltaPeso")
         return
     try:
-        weight = float(unicodedata.normalize('NFKC', str(raw)).strip())
+        weight = parse_number(raw)
     except ValueError:
-        st.session_state.search_error = "Valor inválido. Use apenas números, ex: 1.5"
+        st.session_state.search_error = t("peso.invalido")
         return
     if weight <= 0:
-        st.session_state.search_error = "O peso deve ser maior que zero."
+        st.session_state.search_error = t("peso.maiorQueZero")
         return
 
     if not can_modify(target.get("author", "")):
-        st.session_state.search_error = NO_PERMISSION_MSG
+        st.session_state.search_error = t("editar.semPermissao")
         return
 
     unit = st.session_state.get("unit_edit", target["unit"])
     try:
-        with st.spinner("Salvando…"):
+        with st.spinner(t("editar.aGuardar")):
             update_log_row(target, weight, unit)
     except StaleRowError:
         load_log_data.clear()
-        st.session_state.search_error = STALE_MSG
+        st.session_state.search_error = t("erro.desactualizado")
         st.session_state.edit_target = None
         st.session_state.step = st.session_state.return_step or 1
         return
     except Exception:
-        st.session_state.search_error = SAVE_FAIL_MSG
+        st.session_state.search_error = t("erro.gravar")
         return
-    st.toast(f"{target['line']} atualizado")
+    st.toast(t("brinde.actualizado", linha=target["line"]))
     st.session_state.edit_target = None
     st.session_state.step = st.session_state.return_step or 1
 
@@ -1052,12 +1168,12 @@ def process_submission():
     if not raw:
         return
     try:
-        weight = float(unicodedata.normalize('NFKC', str(raw)).strip())
+        weight = parse_number(raw)
     except ValueError:
-        st.session_state.search_error = "Valor inválido. Use apenas números, ex: 1.5"
+        st.session_state.search_error = t("peso.invalido")
         return
     if weight <= 0:
-        st.session_state.search_error = "O peso deve ser maior que zero."
+        st.session_state.search_error = t("peso.maiorQueZero")
         return
 
     unit = st.session_state.get("unit_input", "kg")
@@ -1068,13 +1184,13 @@ def process_submission():
         return
 
     try:
-        with st.spinner("Registrando…"):
+        with st.spinner(t("peso.aRegistar")):
             write_log(weight, unit)
     except Exception:
         # 入力値は消さない（form_counterを進めない）ので、そのまま再送できる
-        st.session_state.search_error = SAVE_FAIL_MSG
+        st.session_state.search_error = t("erro.gravar")
         return
-    st.toast(f"{st.session_state.selected_line} registrado")
+    st.toast(t("brinde.registado", linha=st.session_state.selected_line))
     reset_to_search()
 
 
@@ -1140,27 +1256,29 @@ if not st.session_state.activated and code_matches(st.query_params.get("ac", "")
     st.session_state.activated = True
 
 if not st.session_state.activated:
-    st.html("""
+    language_picker()
+
+    st.html(f"""
     <div class="login-head">
       <div class="mark">JatLog</div>
-      <h1>Ativar o aparelho</h1>
-      <p>Digite o código de activação que o gestor lhe deu.
-         Só é preciso uma vez em cada aparelho.</p>
+      <h1>{esc(t("activacao.titulo"))}</h1>
+      <p>{esc(t("activacao.texto"))}</p>
     </div>
     """)
 
     with st.container(key="loginpanel"):
         pop_error()
 
-        code_input = st.text_input("Código de activação", placeholder="Código do gestor")
+        code_input = st.text_input(t("activacao.campo"),
+                                   placeholder=t("activacao.campoPlaceholder"))
 
         with st.container(key="btn_login"):
-            if st.button("Ativar", use_container_width=True):
+            if st.button(t("activacao.botao"), use_container_width=True):
                 if code_matches(code_input):
                     st.session_state.activated = True
                     st.session_state.remember_code = code_input.strip()
                 else:
-                    st.session_state.search_error = "Código de activação incorreto."
+                    st.session_state.search_error = t("activacao.errado")
                 st.rerun()
 
     st.html(f'<div class="appfoot">JatLog · v{APP_VERSION}</div>')
@@ -1178,42 +1296,43 @@ if st.session_state.remember_code:
 # ==========================================
 if st.session_state.step == 0:
 
-    st.html("""
+    language_picker()
+
+    st.html(f"""
     <div class="login-head">
       <div class="mark">JatLog</div>
-      <h1>Registro de colheita</h1>
-      <p>Identifique-se para começar. O nome fica guardado até você trocar de usuário.</p>
+      <h1>{esc(t("entrada.titulo"))}</h1>
+      <p>{esc(t("entrada.texto"))}</p>
     </div>
     """)
 
     with st.container(key="loginpanel"):
         pop_error()
 
-        user_input = st.text_input("Nome de usuário", placeholder="Seu nome")
+        user_input = st.text_input(t("entrada.nome"), placeholder=t("entrada.nomePlaceholder"))
 
         # 一度管理者になったら、ユーザー交代しても管理者のまま（明示的に抜けるまで）
         if st.session_state.role == "admin":
-            st.html('<div class="banner info">Modo administrador ativo — '
-                    'você continuará como administrador.</div>')
+            st.html(f'<div class="banner info">{esc(t("entrada.adminActivo"))}</div>')
             with st.container(key="btn_exit_admin"):
-                if st.button("Sair do modo administrador", use_container_width=True):
+                if st.button(t("entrada.sairAdmin"), use_container_width=True):
                     st.session_state.role = "worker"
                     st.session_state.pop("admin_pw_input", None)
                     st.rerun()
         else:
-            with st.expander("Administrador"):
-                st.text_input("Senha do administrador", type="password",
-                              key="admin_pw_input", placeholder="Somente para o gestor")
+            with st.expander(t("entrada.admin")):
+                st.text_input(t("entrada.senha"), type="password",
+                              key="admin_pw_input", placeholder=t("entrada.senhaPlaceholder"))
 
         with st.container(key="btn_login"):
-            if st.button("Começar", use_container_width=True):
+            if st.button(t("entrada.botao"), use_container_width=True):
                 pw = str(st.session_state.get("admin_pw_input", "") or "").strip()
                 already_admin = st.session_state.role == "admin"
                 if not already_admin and pw and pw != ADMIN_PASSWORD:
-                    st.session_state.search_error = "Senha do administrador incorreta."
+                    st.session_state.search_error = t("entrada.senhaErrada")
                     st.rerun()
                 elif not user_input or not user_input.strip():
-                    st.session_state.search_error = "Informe seu nome."
+                    st.session_state.search_error = t("entrada.faltaNome")
                     st.rerun()
                 else:
                     st.session_state.username = user_input.strip()
@@ -1232,11 +1351,14 @@ if st.session_state.step == 0:
 if st.session_state.step == 8:
     site = current_site()
 
+    language_picker()
+
+    _u_key = "local.usuarioAdmin" if st.session_state.role == "admin" else "local.usuario"
     st.html(f"""
     <div class="login-head">
       <div class="mark">JatLog</div>
-      <h1>Escolha o local e o mês</h1>
-      <p>Usuário: <b>{esc(st.session_state.username)}</b>{' · administrador' if st.session_state.role == 'admin' else ''}</p>
+      <h1>{esc(t("local.titulo"))}</h1>
+      <p>{t(_u_key, nome=esc(st.session_state.username))}</p>
     </div>
     """)
 
@@ -1247,7 +1369,7 @@ if st.session_state.step == 8:
         _site_keys = list(SITES.keys())
         _site_labels = [SITES[k]["label"] for k in _site_keys]
         _cur_site_idx = _site_keys.index(st.session_state.get("site", _site_keys[0]))
-        local_input = st.selectbox("Local", _site_labels, index=_cur_site_idx)
+        local_input = st.selectbox(t("local.local"), _site_labels, index=_cur_site_idx)
 
         _now = datetime.now(TZ_MZ)
         current_year = _now.year
@@ -1265,12 +1387,12 @@ if st.session_state.step == 8:
 
         col_month, col_year = st.columns(2)
         with col_month:
-            month_input = st.selectbox("Mês", MONTHS, index=def_m_idx)
+            month_input = st.selectbox(t("local.mes"), MONTHS, index=def_m_idx)
         with col_year:
-            year_input = st.selectbox("Ano", year_options, index=def_y_idx)
+            year_input = st.selectbox(t("local.ano"), year_options, index=def_y_idx)
 
         with st.container(key="btn_login"):
-            if st.button("Continuar", use_container_width=True):
+            if st.button(t("local.botao"), use_container_width=True):
                 st.session_state.site = _site_keys[_site_labels.index(local_input)]
                 st.session_state.target_month = f"{month_input}-{year_input[-2:]}"
                 st.session_state.admin_month_pick = st.session_state.target_month
@@ -1281,7 +1403,7 @@ if st.session_state.step == 8:
                 st.rerun()
 
     with st.container(key="btn_logout"):
-        if st.button("Trocar de usuário", use_container_width=True):
+        if st.button(t("geral.trocarUsuario"), use_container_width=True):
             st.session_state.username = ""
             st.session_state.target_month = ""
             st.session_state.pop("admin_pw_input", None)
@@ -1301,9 +1423,9 @@ try:
     df_log = load_log_data(_site_cfg["spreadsheet_key"], _site_cfg["log_tab"])
 except Exception as e:
     st.html(
-        f'<div class="banner error">Não foi possível carregar os dados. {esc(e)}</div>'
+        f'<div class="banner error">{esc(t("dados.erro", erro=e))}</div>'
     )
-    if st.button("Tentar novamente", use_container_width=True, key="retry_load"):
+    if st.button(t("dados.tentar"), use_container_width=True, key="retry_load"):
         load_master_data.clear()
         load_log_data.clear()
         get_or_create_ws.clear()
@@ -1339,7 +1461,7 @@ st.html(f"""
   </div>
   <div class="counter">
     <div class="num">{sack_count}</div>
-    <div class="lbl">registros</div>
+    <div class="lbl">{esc(t("topo.registros"))}</div>
   </div>
 </div>
 """)
@@ -1366,7 +1488,7 @@ if st.session_state.step == 1:
         if _cur not in _mopts:
             _mopts = [_cur] + _mopts
         with st.container(key="adminmonthrow"):
-            st.selectbox("Mês (administrador)", _mopts, index=_mopts.index(_cur),
+            st.selectbox(t("busca.mesAdmin"), _mopts, index=_mopts.index(_cur),
                          key="admin_month_pick", on_change=_admin_pick_month)
 
     def process_search():
@@ -1378,7 +1500,7 @@ if st.session_state.step == 1:
             return
         st.session_state.last_saved = None
         if not val.isdigit():
-            st.session_state.search_error = "Digite apenas números."
+            st.session_state.search_error = t("busca.soNumeros")
             return
 
         target = int(val)
@@ -1397,7 +1519,7 @@ if st.session_state.step == 1:
             st.session_state.matched_row = None
             st.session_state.step = 15
         else:
-            st.session_state.search_error = site["not_found"].format(val=val)
+            st.session_state.search_error = t_site("naoExiste", v=val)
 
     pop_error()
 
@@ -1405,16 +1527,17 @@ if st.session_state.step == 1:
     if st.session_state.last_saved:
         _ls = st.session_state.last_saved
         st.html(
-            f'<div class="banner ok"><span class="tick">✓</span>'
-            f'<b>{esc(_ls["line"])}</b> — {esc(_ls["val"])} {esc(_ls["unit"])} '
-            f'salvo às {esc(_ls["time"])}</div>'
+            '<div class="banner ok"><span class="tick">✓</span>'
+            + t("busca.gravado", linha=esc(_ls["line"]), valor=esc(fmt_num(_ls["val"])),
+                unidade=esc(_ls["unit"]), hora=esc(_ls["time"]))
+            + '</div>'
         )
 
-    st.html(f'<div class="eyebrow">{esc(site["search_label"])}</div>')
+    st.html(f'<div class="eyebrow">{esc(t_site("busca"))}</div>')
 
     with st.container(key="searchpanel"):
         st.text_input(
-            site["search_input_label"],
+            t_site("buscaCampo"),
             placeholder="1",
             key=f"search_{st.session_state.form_counter}",
             on_change=process_search,
@@ -1422,14 +1545,14 @@ if st.session_state.step == 1:
         )
 
     st.html(
-        '<div class="banner info">Digite o número e toque em Enter para avançar.</div>'
+        f'<div class="banner info">{esc(t("busca.ajuda"))}</div>'
     )
 
     l1, l2 = st.columns(2)
     with l1:
         with st.container(key="btn_month"):
             # 名前はそのままに、拠点と月・年の選択画面へ戻る
-            if st.button("Mudar local ou mês", use_container_width=True):
+            if st.button(t("busca.mudarLocal"), use_container_width=True):
                 st.session_state.candidate_rows = []
                 st.session_state.last_saved = None
                 st.session_state.step = 8
@@ -1437,7 +1560,7 @@ if st.session_state.step == 1:
     with l2:
         with st.container(key="btn_logout"):
             # 管理者権限は保持したまま名前だけ入れ直せる（抜けるのはログイン画面から）
-            if st.button("Trocar de usuário", use_container_width=True):
+            if st.button(t("geral.trocarUsuario"), use_container_width=True):
                 st.session_state.username = ""
                 st.session_state.target_month = ""
                 st.session_state.candidate_rows = []
@@ -1456,19 +1579,21 @@ elif st.session_state.step == 15:
     site = current_site()
 
     st.html(
-        f'<div class="banner warn">O número <b>{esc(st.session_state.searched_number)}</b> '
-        f'aparece em {len(st.session_state.candidate_rows)} registros. '
-        f'Escolha em qual deles você vai lançar o peso.</div>'
+        '<div class="banner warn">'
+        + t("candidatos.aviso", numero=esc(st.session_state.searched_number),
+            n=len(st.session_state.candidate_rows))
+        + '</div>'
     )
 
     with st.container(key="candzone"):
         for i, row in enumerate(st.session_state.candidate_rows):
             line_name = str(row.get(site["field_col"], "")).strip()
-            done = "  •  JÁ REGISTRADO" if already_registered(line_name) else ""
+            done = f"  •  {t('candidatos.jaRegistado')}" if already_registered(line_name) else ""
             label = (
                 f"{line_name}{done}\n"
-                f"{describe_row(row)}  ·  Saco {getv(row, 'Sack Number')}\n"
-                f"{getv(row, 'Variety')}  ·  {getv(row, 'Total no.of plant', 'No.of plant available')} plantas"
+                f"{describe_row(row)}  ·  {t('peso.saco')} {getv(row, 'Sack Number')}\n"
+                f"{getv(row, 'Variety')}  ·  "
+                f"{getv(row, 'Total no.of plant', 'No.of plant available')} {t('peso.plantasMin')}"
             )
             if st.button(label, key=f"cand_{i}", use_container_width=True):
                 st.session_state.selected_line = line_name
@@ -1478,7 +1603,7 @@ elif st.session_state.step == 15:
                 st.rerun()
 
     with st.container(key="btn_back"):
-        if st.button("Buscar outro número", use_container_width=True):
+        if st.button(t("candidatos.outro"), use_container_width=True):
             reset_to_search()
             st.rerun()
 
@@ -1495,34 +1620,36 @@ elif st.session_state.step == 2:
     # --- 異常値の確認待ち ---
     if st.session_state.pending_weight is not None:
         w, u = st.session_state.pending_weight
+        _wtxt = fmt_num(f"{w:.2f}")
         st.html(
-            f'<div class="banner warn">O valor <b>{w:.2f} {u}</b> está fora da faixa '
-            f'esperada. Confirme se está correto antes de registrar.</div>'
+            '<div class="banner warn">'
+            + t("confirmar.aviso", valor=esc(_wtxt), unidade=esc(u))
+            + '</div>'
         )
         st.html(f"""
         <div class="readout">
-          <div class="tag">Confirmar registro</div>
+          <div class="tag">{esc(t("confirmar.tag"))}</div>
           <div class="line-code">{esc(line_name)}</div>
-          <div class="sub">{w:.2f} {u}</div>
+          <div class="sub">{esc(_wtxt)} {esc(u)}</div>
         </div>
         """)
 
         c1, c2 = st.columns(2)
         with c1:
             with st.container(key="btn_force"):
-                if st.button("Registrar assim", use_container_width=True):
+                if st.button(t("confirmar.assim"), use_container_width=True):
                     try:
-                        with st.spinner("Registrando…"):
+                        with st.spinner(t("peso.aRegistar")):
                             write_log(w, u)
-                        st.toast(f"{line_name} registrado")
+                        st.toast(t("brinde.registado", linha=line_name))
                         reset_to_search()
                     except Exception:
-                        st.session_state.search_error = SAVE_FAIL_MSG
+                        st.session_state.search_error = t("erro.gravar")
                         st.session_state.pending_weight = None
                     st.rerun()
         with c2:
             with st.container(key="btn_fix"):
-                if st.button("Corrigir", use_container_width=True):
+                if st.button(t("confirmar.corrigir"), use_container_width=True):
                     st.session_state.pending_weight = None
                     st.session_state.form_counter += 1
                     st.rerun()
@@ -1532,21 +1659,21 @@ elif st.session_state.step == 2:
 
     if already_registered(line_name):
         st.html(
-            f'<div class="banner warn">{esc(site["already_registered_msg"])}</div>'
+            f'<div class="banner warn">{esc(t_site("jaRegistado"))}</div>'
         )
 
     # --- 計量パネル ---
     with st.container(key="weightpanel"):
         st.html(f"""
         <div class="readout">
-          <div class="tag">Pesando</div>
+          <div class="tag">{esc(t("peso.tag"))}</div>
           <div class="line-code">{esc(line_name)}</div>
-          <div class="sub">{esc(describe_row(row_data))} &nbsp;·&nbsp; Saco {esc(getv(row_data, 'Sack Number'))}</div>
+          <div class="sub">{esc(describe_row(row_data))} &nbsp;·&nbsp; {esc(t("peso.saco"))} {esc(getv(row_data, 'Sack Number'))}</div>
         </div>
         """)
 
         st.text_input(
-            "Peso",
+            t("peso.campo"),
             placeholder="0.00",
             key=f"weight_{st.session_state.form_counter}",
             on_change=process_submission,
@@ -1570,22 +1697,22 @@ elif st.session_state.step == 2:
     c1, c2 = st.columns(2)
     with c1:
         with st.container(key="btn_confirm"):
-            if st.button("Registrar", use_container_width=True):
+            if st.button(t("peso.registar"), use_container_width=True):
                 process_submission()
                 st.rerun()
     with c2:
         with st.container(key="btn_cancel"):
-            if st.button("Cancelar", use_container_width=True):
+            if st.button(t("geral.cancelar"), use_container_width=True):
                 reset_to_search()
                 st.rerun()
 
     # --- 明細 ---
     st.html(f"""
     <div class="meta">
-      <div class="cell"><div class="k">ID da mãe</div><div class="v">{esc(getv(row_data, 'Mother Id', 'Mother ID'))}</div></div>
-      <div class="cell"><div class="k">Variedade</div><div class="v">{esc(getv(row_data, 'Variety'))}</div></div>
-      <div class="cell"><div class="k">Saco</div><div class="v">{esc(getv(row_data, 'Sack Number'))}</div></div>
-      <div class="cell"><div class="k">Plantas</div><div class="v">{esc(getv(row_data, 'Total no.of plant', 'No.of plant available'))}</div></div>
+      <div class="cell"><div class="k">{esc(t("peso.mae"))}</div><div class="v">{esc(getv(row_data, 'Mother Id', 'Mother ID'))}</div></div>
+      <div class="cell"><div class="k">{esc(t("peso.variedade"))}</div><div class="v">{esc(getv(row_data, 'Variety'))}</div></div>
+      <div class="cell"><div class="k">{esc(t("peso.saco"))}</div><div class="v">{esc(getv(row_data, 'Sack Number'))}</div></div>
+      <div class="cell"><div class="k">{esc(t("peso.plantas"))}</div><div class="v">{esc(getv(row_data, 'Total no.of plant', 'No.of plant available'))}</div></div>
     </div>
     """)
 
@@ -1606,64 +1733,67 @@ elif st.session_state.step == 3:
 
     if st.session_state.confirm_delete:
         st.html(
-            f'<div class="banner error">Excluir definitivamente o registro de <b>{esc(target["line"])}</b> '
-            f'({esc(target["val"])} {esc(target["unit"])})? Esta ação não pode ser desfeita.</div>'
+            '<div class="banner error">'
+            + t("apagar.aviso", linha=esc(target["line"]),
+                valor=esc(fmt_num(target["val"])), unidade=esc(target["unit"]))
+            + '</div>'
         )
         st.html(f"""
         <div class="readout">
-          <div class="tag">Registro a excluir</div>
+          <div class="tag">{esc(t("apagar.tag"))}</div>
           <div class="line-code">{esc(target['line'])}</div>
-          <div class="sub">Lançado em {esc(target['stamp'])} por {esc(target.get('author', '-'))}</div>
+          <div class="sub">{esc(t("editar.lancado", quando=target['stamp'], quem=target.get('author', '-')))}</div>
         </div>
         """)
 
         d1, d2 = st.columns(2)
         with d1:
             with st.container(key="btn_danger"):
-                if st.button("Sim, excluir", use_container_width=True):
+                if st.button(t("apagar.sim"), use_container_width=True):
                     if not can_modify(target.get("author", "")):
-                        st.session_state.search_error = NO_PERMISSION_MSG
+                        st.session_state.search_error = t("editar.semPermissao")
                         st.session_state.confirm_delete = False
                         st.rerun()
                     try:
-                        with st.spinner("Excluindo…"):
+                        with st.spinner(t("apagar.aApagar")):
                             delete_log_row(target)
-                        st.toast(f"{target['line']} excluído")
+                        st.toast(t("brinde.apagado", linha=target["line"]))
                     except StaleRowError:
                         load_log_data.clear()
-                        st.session_state.search_error = STALE_MSG
+                        st.session_state.search_error = t("erro.desactualizado")
                     except Exception:
-                        st.session_state.search_error = SAVE_FAIL_MSG
+                        st.session_state.search_error = t("erro.gravar")
                     st.session_state.edit_target = None
                     st.session_state.confirm_delete = False
                     st.session_state.step = st.session_state.return_step or 1
                     st.rerun()
         with d2:
             with st.container(key="btn_cancel"):
-                if st.button("Não, voltar", use_container_width=True):
+                if st.button(t("apagar.nao"), use_container_width=True):
                     st.session_state.confirm_delete = False
                     st.rerun()
 
     else:
         st.html(
-            f'<div class="banner warn">Corrigindo o peso registrado para <b>{esc(target["line"])}</b>. '
-            f'Ajuste o valor e salve.</div>'
+            '<div class="banner warn">'
+            + t("editar.cabecalho", linha=esc(target["line"]))
+            + '</div>'
         )
 
         with st.container(key="weightpanel"):
             st.html(f"""
             <div class="readout">
-              <div class="tag">Editando registro</div>
+              <div class="tag">{esc(t("editar.tag"))}</div>
               <div class="line-code">{esc(target['line'])}</div>
-              <div class="sub">Lançado em {esc(target['stamp'])} por {esc(target.get('author', '-'))}</div>
+              <div class="sub">{esc(t("editar.lancado", quando=target['stamp'], quem=target.get('author', '-')))}</div>
             </div>
             """)
 
             edit_key = f"editweight_{st.session_state.form_counter}"
             if edit_key not in st.session_state:
-                st.session_state[edit_key] = target["val"]
+                st.session_state[edit_key] = fmt_num(target["val"])
             st.text_input(
-                "Novo peso",
+                t("editar.campo"),
                 key=edit_key,
                 label_visibility="collapsed"
             )
@@ -1685,18 +1815,18 @@ elif st.session_state.step == 3:
         c1, c2 = st.columns(2)
         with c1:
             with st.container(key="btn_confirm"):
-                if st.button("Salvar", use_container_width=True):
+                if st.button(t("editar.guardar"), use_container_width=True):
                     process_edit_save()
                     st.rerun()
         with c2:
             with st.container(key="btn_cancel"):
-                if st.button("Cancelar", use_container_width=True):
+                if st.button(t("geral.cancelar"), use_container_width=True):
                     st.session_state.edit_target = None
                     st.session_state.step = st.session_state.return_step or 1
                     st.rerun()
 
         with st.container(key="btn_delete"):
-            if st.button("Excluir este registro", use_container_width=True):
+            if st.button(t("editar.apagar"), use_container_width=True):
                 st.session_state.confirm_delete = True
                 st.rerun()
 
@@ -1707,7 +1837,7 @@ elif st.session_state.step == 3:
 # 履歴
 # ==========================================
 if st.session_state.step in (1, 2, 15):
-    st.html('<div class="eyebrow" style="margin-top:26px">Últimos registros</div>')
+    st.html(f'<div class="eyebrow" style="margin-top:26px">{esc(t("historico.titulo"))}</div>')
 
     if not df_month.empty and len(df_log.columns) >= 6:
         c_time, c_user, c_month, c_line, c_val, c_unit = (
@@ -1723,8 +1853,9 @@ if st.session_state.step in (1, 2, 15):
                 unit_val = str(r.get(c_unit, "")).strip()
 
                 if can_modify(author):
-                    who = "você" if author.casefold() == st.session_state.username.strip().casefold() else author
-                    label = f"{line_val}    {val} {unit_val}\n{stamp} · {who} · toque para corrigir"
+                    who = t("historico.voce") if author.casefold() == st.session_state.username.strip().casefold() else author
+                    label = (f"{line_val}    {fmt_num(val)} {unit_val}\n"
+                             f"{stamp} · {who} · {t('historico.toque')}")
                     if st.button(label, key=f"hist_{idx}", use_container_width=True):
                         st.session_state.edit_target = {
                             "row": int(idx) + 2,
@@ -1743,10 +1874,10 @@ if st.session_state.step in (1, 2, 15):
                         st.rerun()
                 else:
                     st.html(
-                        f'<div class="histrow">{esc(line_val)} &nbsp;&nbsp; {esc(val)} {esc(unit_val)}'
-                        f'<div class="hs">{esc(stamp)} · {esc(author)} · 🔒 só o autor ou o admin</div></div>'
+                        f'<div class="histrow">{esc(line_val)} &nbsp;&nbsp; {esc(fmt_num(val))} {esc(unit_val)}'
+                        f'<div class="hs">{esc(stamp)} · {esc(author)} · {esc(t("historico.trancado"))}</div></div>'
                     )
     else:
         st.html(
-            f'<div class="empty">Nenhum registro em {esc(st.session_state.target_month)} ainda.</div>'
+            f'<div class="empty">{esc(t("historico.vazio", mes=st.session_state.target_month))}</div>'
         )
